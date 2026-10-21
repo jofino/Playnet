@@ -1,12 +1,12 @@
 {
   "expo": {
-    "name": "Rally",
-    "slug": "Rally",
+    "name": "Playnet",
+    "slug": "playnet",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "rally",
-    "userInterfaceStyle": "automatic",
+    "scheme": "playnet",
+    "userInterfaceStyle": "light",
     "ios": {
       "icon": "./assets/expo.icon"
     },
@@ -31,6 +31,14 @@
           "backgroundColor": "#208AEF",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "O Playnet acessa suas fotos para você escolher sua foto de perfil.",
+          "cameraPermission": false,
+          "microphonePermission": false
         }
       ]
     ],
