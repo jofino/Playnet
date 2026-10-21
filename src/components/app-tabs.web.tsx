@@ -6,40 +6,71 @@ import {
   TabTriggerSlotProps,
   TabListProps,
 } from 'expo-router/ui';
-import { SymbolView } from 'expo-symbols';
-import { Pressable, useColorScheme, View, StyleSheet } from 'react-native';
+import { SymbolView, type AndroidSymbol } from 'expo-symbols';
+import { Pressable, View, StyleSheet } from 'react-native';
 
-import { ExternalLink } from './external-link';
 import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
 
-import { Colors, MaxContentWidth, Spacing } from '@/constants/theme';
+import {
+  Colors,
+  MaxContentWidth,
+  Spacing,
+  WebBottomTabBarHeight,
+  WebTopTabBarHeight,
+} from '@/constants/theme';
+import { useIsWideLayout } from '@/hooks/use-is-wide-layout';
 
+const TABS = [
+  { name: 'loja', href: '/', label: 'Loja', icon: 'storefront' },
+  { name: 'comunidade', href: '/comunidade', label: 'Comunidade', icon: 'groups' },
+  { name: 'jogar', href: '/jogar', label: 'Jogar', icon: 'sports_tennis' },
+  { name: 'ranking', href: '/ranking', label: 'Ranking', icon: 'leaderboard' },
+  { name: 'perfil', href: '/perfil', label: 'Perfil', icon: 'person' },
+] as const;
+
+/**
+ * Em telas largas (desktop) as abas ficam numa barra flutuante no topo;
+ * em telas estreitas ficam numa barra fixa embaixo, como no app nativo.
+ */
 export default function AppTabs() {
+  const isWide = useIsWideLayout();
+
   return (
     <Tabs>
       <TabSlot style={{ height: '100%' }} />
       <TabList asChild>
-        <CustomTabList>
-          <TabTrigger name="home" href="/" asChild>
-            <TabButton>Home</TabButton>
-          </TabTrigger>
-          <TabTrigger name="explore" href="/explore" asChild>
-            <TabButton>Explore</TabButton>
-          </TabTrigger>
-        </CustomTabList>
+        {isWide ? (
+          <TopTabList>
+            {TABS.map((tab) => (
+              <TabTrigger key={tab.name} name={tab.name} href={tab.href} asChild>
+                <TopTabButton>{tab.label}</TopTabButton>
+              </TabTrigger>
+            ))}
+          </TopTabList>
+        ) : (
+          <BottomTabList>
+            {TABS.map((tab) => (
+              <TabTrigger key={tab.name} name={tab.name} href={tab.href} asChild>
+                <BottomTabButton icon={tab.icon}>{tab.label}</BottomTabButton>
+              </TabTrigger>
+            ))}
+          </BottomTabList>
+        )}
       </TabList>
     </Tabs>
   );
 }
 
-export function TabButton({ children, isFocused, ...props }: TabTriggerSlotProps) {
+function TopTabButton({ children, isFocused, ...props }: TabTriggerSlotProps) {
   return (
     <Pressable {...props} style={({ pressed }) => pressed && styles.pressed}>
       <ThemedView
-        type={isFocused ? 'backgroundSelected' : 'backgroundElement'}
-        style={styles.tabButtonView}>
-        <ThemedText type="small" themeColor={isFocused ? 'text' : 'textSecondary'}>
+        type={isFocused ? 'primary' : 'backgroundElement'}
+        style={styles.topTabButton}>
+        <ThemedText
+          type={isFocused ? 'smallBold' : 'small'}
+          themeColor={isFocused ? 'onPrimary' : 'textSecondary'}>
           {children}
         </ThemedText>
       </ThemedView>
@@ -47,44 +78,61 @@ export function TabButton({ children, isFocused, ...props }: TabTriggerSlotProps
   );
 }
 
-export function CustomTabList(props: TabListProps) {
-  const scheme = useColorScheme();
-  const colors = Colors[scheme === 'unspecified' ? 'light' : scheme];
-
+function TopTabList(props: TabListProps) {
   return (
-    <View {...props} style={styles.tabListContainer}>
-      <ThemedView type="backgroundElement" style={styles.innerContainer}>
-        <ThemedText type="smallBold" style={styles.brandText}>
-          Expo Starter
+    <View {...props} style={styles.topTabList}>
+      <ThemedView type="backgroundElement" style={styles.topTabListInner}>
+        <ThemedText type="smallBold" themeColor="primary" style={styles.brandText}>
+          Playnet
         </ThemedText>
 
         {props.children}
-
-        <ExternalLink href="https://docs.expo.dev" asChild>
-          <Pressable style={styles.externalPressable}>
-            <ThemedText type="link">Docs</ThemedText>
-            <SymbolView
-              tintColor={colors.text}
-              name={{ ios: 'arrow.up.right.square', web: 'link' }}
-              size={12}
-            />
-          </Pressable>
-        </ExternalLink>
       </ThemedView>
     </View>
   );
 }
 
+function BottomTabButton({
+  children,
+  isFocused,
+  icon,
+  ...props
+}: TabTriggerSlotProps & { icon: AndroidSymbol }) {
+  const color = isFocused ? Colors.primary : Colors.textSecondary;
+
+  return (
+    <Pressable {...props} style={({ pressed }) => [styles.bottomTabButton, pressed && styles.pressed]}>
+      <SymbolView name={{ web: icon }} tintColor={color} size={24} />
+      <ThemedText type={isFocused ? 'smallBold' : 'small'} style={[styles.bottomTabLabel, { color }]}>
+        {children}
+      </ThemedText>
+    </Pressable>
+  );
+}
+
+function BottomTabList(props: TabListProps) {
+  return (
+    <View {...props} style={styles.bottomTabList}>
+      {props.children}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  tabListContainer: {
+  pressed: {
+    opacity: 0.7,
+  },
+
+  topTabList: {
     position: 'absolute',
     width: '100%',
+    height: WebTopTabBarHeight,
     padding: Spacing.three,
     justifyContent: 'center',
     alignItems: 'center',
     flexDirection: 'row',
   },
-  innerContainer: {
+  topTabListInner: {
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.five,
     borderRadius: Spacing.five,
@@ -97,19 +145,31 @@ const styles = StyleSheet.create({
   brandText: {
     marginRight: 'auto',
   },
-  pressed: {
-    opacity: 0.7,
-  },
-  tabButtonView: {
+  topTabButton: {
     paddingVertical: Spacing.one,
     paddingHorizontal: Spacing.three,
     borderRadius: Spacing.three,
   },
-  externalPressable: {
+
+  bottomTabList: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: WebBottomTabBarHeight,
     flexDirection: 'row',
-    justifyContent: 'center',
+    backgroundColor: Colors.background,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  bottomTabButton: {
+    flex: 1,
     alignItems: 'center',
-    gap: Spacing.one,
-    marginLeft: Spacing.three,
+    justifyContent: 'center',
+    gap: Spacing.half,
+  },
+  bottomTabLabel: {
+    fontSize: 12,
+    lineHeight: 16,
   },
 });

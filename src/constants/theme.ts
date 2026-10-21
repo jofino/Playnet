@@ -1,30 +1,27 @@
 /**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
+ * Cores do app. O Playnet usa um tema único: fundo branco com o laranja da marca.
  */
 
 import '@/global.css';
 
 import { Platform } from 'react-native';
 
+/** Laranja da logo oficial (assets/images/brand/playnet-logo.jpg). */
+const PlaynetOrange = '#E05434';
+
 export const Colors = {
-  light: {
-    text: '#000000',
-    background: '#ffffff',
-    backgroundElement: '#F0F0F3',
-    backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
-  },
-  dark: {
-    text: '#ffffff',
-    background: '#000000',
-    backgroundElement: '#212225',
-    backgroundSelected: '#2E3135',
-    textSecondary: '#B0B4BA',
-  },
+  text: '#11181C',
+  background: '#ffffff',
+  backgroundElement: '#F0F0F3',
+  backgroundSelected: '#E0E1E6',
+  textSecondary: '#60646C',
+  border: '#E4E4E7',
+  primary: PlaynetOrange,
+  primarySoft: '#F9DDD6',
+  onPrimary: '#ffffff',
 } as const;
 
-export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
+export type ThemeColor = keyof typeof Colors;
 
 export const Fonts = Platform.select({
   ios: {
@@ -61,5 +58,11 @@ export const Spacing = {
   six: 64,
 } as const;
 
+/** Altura da barra de abas nativa (iOS/Android). */
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
+/** Barras de abas da web (ver app-tabs.web.tsx): no topo em telas largas, embaixo nas estreitas. */
+export const WebTopTabBarHeight = 76;
+export const WebBottomTabBarHeight = 64;
+/** A partir desta largura a web usa o layout de desktop. */
+export const WideLayoutMinWidth = 768;
 export const MaxContentWidth = 800;
