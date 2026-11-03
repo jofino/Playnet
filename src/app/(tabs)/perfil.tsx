@@ -11,6 +11,7 @@ import { ProfileBanner } from '@/components/profile/profile-banner';
 import { RatingChart } from '@/components/profile/rating-chart';
 import { RatingHistoryChart } from '@/components/profile/rating-history-chart';
 import { RatingSheet } from '@/components/profile/rating-sheet';
+import { SignOutButton } from '@/components/profile/sign-out-button';
 import { ScreenHeader } from '@/components/screen-header';
 import { ScreenScrollView } from '@/components/screen-scroll-view';
 import { SportChips } from '@/components/sport-chips';
@@ -196,6 +197,10 @@ export default function PerfilScreen() {
               />
             </View>
           ))}
+        </View>
+
+        <View style={[styles.section, styles.sectionSpacing]}>
+          <SignOutButton />
         </View>
       </ScreenScrollView>
 
