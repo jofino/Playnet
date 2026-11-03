@@ -1,4 +1,4 @@
-# Rally
+# Playnet
 
 Aplicativo mobile construído com [Expo](https://expo.dev) (SDK 57), React Native e
 TypeScript, usando o template padrão do `create-expo-app`.
