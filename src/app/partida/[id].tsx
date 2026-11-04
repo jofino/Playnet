@@ -1,32 +1,64 @@
 import { useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import { Button } from '@/components/button';
-import { ScoreSheet } from '@/components/matches/score-sheet';
 import { PlayerChip } from '@/components/player-chip';
 import { ScreenScrollView } from '@/components/screen-scroll-view';
 import { SportIcon } from '@/components/sport-icon';
-import { describeFormat, getFormat } from '@/constants/scoring';
 import { Colors, Spacing } from '@/constants/theme';
-import { formatSide, isFinished, isMine, openSpots, winnerSide } from '@/data/matches';
-import { ME } from '@/data/players';
-import { getVenue } from '@/data/venues';
+import { isFinished, openSpots, type Match } from '@/data/matches';
 import { useLightStatusBar } from '@/hooks/use-light-status-bar';
-import { useReportMatch } from '@/hooks/use-report-match';
+import { useMatchAction } from '@/hooks/use-match-action';
+import { fetchMatch, getMatchErrorMessage } from '@/lib/partidas';
 import { useMatchesStore } from '@/state/matches-context';
 import { formatMatchDate } from '@/utils/date';
 
-/** Detalhe da partida: regras, lados, placar e ações (entrar, sair, registrar resultado). */
+/** Detalhe da partida: local, nível, participantes e as ações de entrar e sair. */
 export default function PartidaScreen() {
   useLightStatusBar();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { matches, joinMatch, leaveMatch } = useMatchesStore();
-  const reportMatch = useReportMatch();
-  const [scoring, setScoring] = useState(false);
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const { matches } = useMatchesStore();
+  const [match, setMatch] = useState<Match | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const match = matches.find((item) => item.id === id);
+  // A lista do contexto muda depois de entrar ou sair, e aí o detalhe também precisa atualizar.
+  useEffect(() => {
+    let active = true;
+
+    fetchMatch(id)
+      .then((next) => {
+        if (!active) return;
+        setMatch(next);
+        setError(null);
+      })
+      .catch((failure) => {
+        if (active) setError(getMatchErrorMessage(failure));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [id, matches]);
+
+  if (loading) {
+    return (
+      <View style={styles.missing}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
+  if (error && !match) {
+    return (
+      <View style={styles.missing}>
+        <Text style={styles.note}>{error}</Text>
+      </View>
+    );
+  }
   if (!match) {
     return (
       <View style={styles.missing}>
@@ -35,33 +67,13 @@ export default function PartidaScreen() {
     );
   }
 
-  const format = getFormat(match.sport, match.formatId);
-  const venue = getVenue(match.venueId);
-  const finished = isFinished(match);
-  const mine = isMine(match);
-  const spots = openSpots(match);
-  const winner = winnerSide(match);
-  const sideLabels: [string, string] = [
-    formatSide(match.sides[0], match.playersPerSide),
-    formatSide(match.sides[1], match.playersPerSide),
-  ];
+  return <MatchDetail match={match} />;
+}
 
-  function save(result: Parameters<typeof reportMatch>[1], winnerIndex: 0 | 1) {
-    if (!match) return;
-    const rating = reportMatch(match, result, winnerIndex);
-    const mySide = match.sides.findIndex((side) => side.includes(ME));
-    const outcome = mySide < 0 ? 'Resultado salvo.' : winnerIndex === mySide ? 'Vitória registrada! 🎉' : 'Derrota registrada.';
-    if (rating?.counted) {
-      const delta = rating.after - rating.before;
-      setFeedback(
-        `${outcome} Seu rating no ${match.sport}: ${rating.before} → ${rating.after} (${delta >= 0 ? '+' : ''}${delta}).`
-      );
-    } else if (rating) {
-      setFeedback(`${outcome} Faça o nivelamento no ${match.sport} (aba Perfil) para seus resultados contarem no rating.`);
-    } else {
-      setFeedback(outcome);
-    }
-  }
+function MatchDetail({ match }: { match: Match }) {
+  const { mine, canJoin, canLeave, busy, error, join, leave } = useMatchAction(match);
+  const finished = isFinished(match);
+  const spots = openSpots(match);
 
   return (
     <View style={styles.screen}>
@@ -71,90 +83,70 @@ export default function PartidaScreen() {
             <SportIcon sport={match.sport} size={34} />
           </View>
           <View style={styles.heroTexts}>
-            <Text style={styles.sport}>
-              {match.sport} · {match.playersPerSide === 2 ? 'Duplas' : 'Simples'}
-            </Text>
+            <Text style={styles.sport}>{match.sport}</Text>
             <Text style={styles.date}>{formatMatchDate(match.date)}</Text>
-            {venue && (
-              <Text style={styles.venue}>
-                📍 {venue.name} · {venue.neighborhood}
+            <Text style={styles.venue}>
+              📍 {match.place} · {match.city}
+            </Text>
+          </View>
+        </View>
+
+        <View style={[styles.section, styles.card]}>
+          <Text style={styles.cardTitle}>Nível</Text>
+          <Text style={styles.cardText}>{match.level}</Text>
+        </View>
+
+        <View style={[styles.section, styles.card]}>
+          <Text style={styles.cardTitle}>
+            Participantes ({match.participants.length} de {match.spots})
+          </Text>
+          <View style={styles.participants}>
+            {match.participants.map((participant) => (
+              <PlayerChip
+                key={participant.id}
+                name={participant.name}
+                userId={participant.id}
+                size="small"
+              />
+            ))}
+            {!finished && spots > 0 && (
+              <Text style={styles.openSpot}>
+                {spots} {spots === 1 ? 'vaga aberta' : 'vagas abertas'}
               </Text>
             )}
           </View>
         </View>
 
-        <View style={[styles.section, styles.card]}>
-          <Text style={styles.cardTitle}>{format.label}</Text>
-          <Text style={styles.cardText}>{describeFormat(format)}</Text>
-        </View>
-
-        <View style={[styles.section, styles.sides]}>
-          {match.sides.map((side, sideIndex) => (
-            <View key={sideIndex} style={[styles.side, winner === sideIndex && styles.sideWinner]}>
-              <Text style={styles.sideTitle}>
-                {winner === sideIndex ? '🏆 Vencedor' : `Lado ${sideIndex + 1}`}
-              </Text>
-              {side.map((name) => (
-                <PlayerChip key={name} name={name} size="small" />
-              ))}
-              {Array.from({ length: match.playersPerSide - side.length }, (_, index) => (
-                <Text key={`vaga-${index}`} style={styles.openSpot}>
-                  Vaga aberta
-                </Text>
-              ))}
-            </View>
-          ))}
-        </View>
-
-        {match.result && (
-          <View style={[styles.section, styles.card]}>
-            <Text style={styles.cardTitle}>Placar</Text>
-            {match.result.map(([a, b], index) => (
-              <View key={index} style={styles.scoreRow}>
-                <Text style={styles.scoreSet}>{index + 1}º set</Text>
-                <Text style={[styles.score, a > b && styles.scoreWin]}>{a}</Text>
-                <Text style={styles.scoreDash}>–</Text>
-                <Text style={[styles.score, b > a && styles.scoreWin]}>{b}</Text>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {feedback && (
+        {!!error && (
           <View style={[styles.section, styles.feedback]}>
-            <Text style={styles.feedbackText} accessibilityLiveRegion="polite">
-              {feedback}
+            <Text style={styles.feedbackText} accessibilityRole="alert" accessibilityLiveRegion="polite">
+              {error}
             </Text>
           </View>
         )}
 
         <View style={[styles.section, styles.actions]}>
-          {!finished && !mine && spots > 0 && (
-            <Button label="Entrar na partida" onPress={() => joinMatch(match.id)} />
+          {canJoin && (
+            <Button
+              label="Entrar na partida"
+              onPress={join}
+              disabled={busy}
+              icon={busy ? <ActivityIndicator size="small" color={Colors.onPrimary} /> : undefined}
+            />
           )}
-          {!finished && mine && (
-            <Button label="Sair da partida" variant="outline" onPress={() => leaveMatch(match.id)} />
-          )}
-          {finished && mine && !match.result && (
-            <Button label="Registrar resultado" onPress={() => setScoring(true)} />
+          {canLeave && (
+            <Button
+              label="Sair da partida"
+              variant="outline"
+              onPress={leave}
+              disabled={busy}
+              icon={busy ? <ActivityIndicator size="small" color={Colors.primary} /> : undefined}
+            />
           )}
           {!finished && !mine && spots === 0 && <Text style={styles.note}>Partida completa.</Text>}
-          {finished && !match.result && !mine && (
-            <Text style={styles.note}>Aguardando os jogadores registrarem o placar.</Text>
-          )}
+          {finished && <Text style={styles.note}>Partida encerrada.</Text>}
         </View>
       </ScreenScrollView>
-
-      {scoring && (
-        <ScoreSheet
-          sport={match.sport}
-          formatId={match.formatId}
-          sideLabels={sideLabels}
-          subtitle={formatMatchDate(match.date)}
-          onClose={() => setScoring(false)}
-          onSave={save}
-        />
-      )}
     </View>
   );
 }
@@ -168,6 +160,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    padding: Spacing.four,
     backgroundColor: Colors.background,
   },
   section: {
@@ -223,59 +216,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
   },
-  sides: {
-    flexDirection: 'row',
-    gap: Spacing.three - Spacing.one,
-    marginTop: Spacing.four,
-  },
-  side: {
-    flex: 1,
+  participants: {
     gap: Spacing.two,
-    padding: Spacing.three,
-    borderRadius: 14,
-    backgroundColor: Colors.backgroundElement,
-  },
-  sideWinner: {
-    backgroundColor: Colors.primarySoft,
-  },
-  sideTitle: {
-    color: Colors.textSecondary,
-    fontSize: 12,
-    fontWeight: 800,
-    textTransform: 'uppercase',
+    marginTop: Spacing.one,
   },
   openSpot: {
     color: Colors.primary,
     fontSize: 14,
     fontWeight: 700,
     paddingVertical: Spacing.one,
-  },
-  scoreRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.three,
-    marginTop: Spacing.one,
-  },
-  scoreSet: {
-    width: 64,
-    color: Colors.textSecondary,
-    fontSize: 14,
-    fontWeight: 600,
-  },
-  score: {
-    width: 32,
-    textAlign: 'center',
-    color: Colors.textSecondary,
-    fontSize: 20,
-    fontWeight: 700,
-  },
-  scoreWin: {
-    color: Colors.primary,
-    fontWeight: 800,
-  },
-  scoreDash: {
-    color: Colors.textSecondary,
-    fontSize: 16,
   },
   feedback: {
     marginTop: Spacing.four,

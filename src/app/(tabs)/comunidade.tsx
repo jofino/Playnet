@@ -1,90 +1,152 @@
+import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import { Avatar } from '@/components/avatar';
-import { PostCard } from '@/components/community/post-card';
 import { PostComposerSheet } from '@/components/community/post-composer-sheet';
-import { StoriesBar } from '@/components/community/stories-bar';
-import { StoryComposerSheet } from '@/components/community/story-composer-sheet';
-import { StoryViewer } from '@/components/community/story-viewer';
+import { PostFeed } from '@/components/community/post-feed';
 import { ScreenHeader } from '@/components/screen-header';
 import { ScreenScrollView } from '@/components/screen-scroll-view';
 import { SegmentedControl } from '@/components/segmented-control';
+import { ERROR_ICON, StateMessage } from '@/components/state-message';
+import { TextField } from '@/components/text-field';
+import { UserRow } from '@/components/user-row';
 import { Colors, Spacing } from '@/constants/theme';
-import { ME, playerIdFromName } from '@/data/players';
-import { useCommunity } from '@/state/community-context';
+import { useAccountSearch } from '@/hooks/use-account-search';
+import { isNearEnd, usePostList } from '@/hooks/use-post-list';
+import { MIN_SEARCH_LENGTH } from '@/lib/perfis';
 import { useUser } from '@/state/user-context';
 
 type Feed = 'all' | 'following';
-type OpenSheet = 'post' | 'story' | null;
 
-/** Comunidade: stories e feed de publicações dos jogadores. */
+/** Comunidade: busca de contas e feed de publicações. */
 export default function ComunidadeScreen() {
-  const { user } = useUser();
-  const { posts, stories, addPost, addStory, markSeen } = useCommunity();
   const [feed, setFeed] = useState<Feed>('all');
-  const [sheet, setSheet] = useState<OpenSheet>(null);
-  const [viewingGroup, setViewingGroup] = useState<number | null>(null);
-
-  const visiblePosts =
-    feed === 'all'
-      ? posts
-      : posts.filter((post) => post.author === ME || user.followingIds.includes(playerIdFromName(post.author)));
 
   return (
     <View style={styles.screen}>
       <ScreenHeader title="Comunidade" />
+      {/* A chave recomeça a lista e a rolagem ao trocar de feed. */}
+      <CommunityFeed key={feed} feed={feed} onChangeFeed={setFeed} />
+    </View>
+  );
+}
 
-      <ScreenScrollView>
-        <StoriesBar groups={stories} onOpen={setViewingGroup} onCreate={() => setSheet('story')} />
+function CommunityFeed({ feed, onChangeFeed }: { feed: Feed; onChangeFeed: (feed: Feed) => void }) {
+  const { user } = useUser();
+  const list = usePostList({ kind: feed });
+  const search = useAccountSearch();
+  const [composing, setComposing] = useState(false);
 
-        <Pressable
-          onPress={() => setSheet('post')}
-          accessibilityRole="button"
-          accessibilityLabel="Criar publicação"
-          style={({ pressed }) => [styles.section, styles.composer, pressed && styles.pressed]}>
-          <Avatar name={user.name} size={40} photoUri={user.photoUri} />
-          <View style={styles.composerInput}>
-            <Text style={styles.composerText}>O que está rolando na quadra?</Text>
-          </View>
-        </Pressable>
-
-        <View style={[styles.section, styles.feedToggle]}>
-          <SegmentedControl
-            options={[
-              { value: 'all', label: 'Para você' },
-              { value: 'following', label: 'Seguindo' },
-            ]}
-            value={feed}
-            onChange={setFeed}
+  return (
+    <>
+      <ScreenScrollView
+        keyboardShouldPersistTaps="handled"
+        scrollEventThrottle={200}
+        onScroll={(event) => {
+          if (!search.active && isNearEnd(event)) list.loadMore();
+        }}
+        refreshControl={
+          <RefreshControl
+            refreshing={list.refreshing}
+            onRefresh={search.active ? search.retry : list.refresh}
+            colors={[Colors.primary]}
+            tintColor={Colors.primary}
+          />
+        }>
+        <View style={styles.section}>
+          <TextField
+            label="Buscar contas"
+            value={search.term}
+            onChangeText={search.setTerm}
+            placeholder="Nome da pessoa"
+            autoCapitalize="words"
+            autoCorrect={false}
+            returnKeyType="search"
+            trailing={
+              search.term ? (
+                <Pressable
+                  onPress={() => search.setTerm('')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Limpar busca"
+                  hitSlop={8}>
+                  <SymbolView
+                    name={{ ios: 'xmark.circle.fill', android: 'cancel', web: 'cancel' }}
+                    tintColor={Colors.textSecondary}
+                    size={20}
+                  />
+                </Pressable>
+              ) : undefined
+            }
           />
         </View>
 
-        <View style={[styles.section, styles.feed]}>
-          {visiblePosts.length > 0 ? (
-            visiblePosts.map((post) => <PostCard key={post.id} post={post} />)
-          ) : (
-            <View style={styles.empty}>
-              <Text style={styles.emptyTitle}>Nada por aqui ainda</Text>
-              <Text style={styles.emptyText}>
-                Siga jogadores pelo Ranking ou pelos perfis para ver as publicações deles.
-              </Text>
+        {search.active ? (
+          <View style={styles.results}>
+            {!search.searchable ? (
+              <Text style={styles.hint}>Digite pelo menos {MIN_SEARCH_LENGTH} caracteres.</Text>
+            ) : search.loading ? (
+              <ActivityIndicator size="large" color={Colors.primary} style={styles.loading} />
+            ) : search.error ? (
+              <StateMessage icon={ERROR_ICON} text={search.error} onRetry={search.retry} />
+            ) : search.users.length > 0 ? (
+              <View style={styles.section}>
+                {search.users.map((account) => (
+                  <UserRow key={account.id} user={account} />
+                ))}
+              </View>
+            ) : (
+              <StateMessage
+                icon={{ ios: 'magnifyingglass', android: 'search', web: 'search' }}
+                text="Nenhuma conta encontrada"
+              />
+            )}
+          </View>
+        ) : (
+          <>
+            <Pressable
+              onPress={() => setComposing(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Criar publicação"
+              style={({ pressed }) => [styles.section, styles.composer, pressed && styles.pressed]}>
+              <Avatar name={user.name} size={40} photoUri={user.photoUri} />
+              <View style={styles.composerInput}>
+                <Text style={styles.composerText}>O que está rolando na quadra?</Text>
+              </View>
+            </Pressable>
+
+            <View style={[styles.section, styles.feedToggle]}>
+              <SegmentedControl
+                options={[
+                  { value: 'all', label: 'Para você' },
+                  { value: 'following', label: 'Seguindo' },
+                ]}
+                value={feed}
+                onChange={onChangeFeed}
+              />
             </View>
-          )}
-        </View>
+
+            <View style={styles.feed}>
+              {feed === 'all' ? (
+                <PostFeed
+                  list={list}
+                  emptyIcon={{ ios: 'bubble.left.and.bubble.right', android: 'forum', web: 'forum' }}
+                  emptyText="Ainda não há publicações. Seja a primeira pessoa a publicar!"
+                />
+              ) : (
+                <PostFeed
+                  list={list}
+                  emptyIcon={{ ios: 'person.2', android: 'group', web: 'group' }}
+                  emptyText="Siga pessoas para ver as publicações delas aqui"
+                />
+              )}
+            </View>
+          </>
+        )}
       </ScreenScrollView>
 
-      {sheet === 'post' && <PostComposerSheet onClose={() => setSheet(null)} onPublish={addPost} />}
-      {sheet === 'story' && <StoryComposerSheet onClose={() => setSheet(null)} onPublish={addStory} />}
-      {viewingGroup !== null && (
-        <StoryViewer
-          groups={stories}
-          startGroup={viewingGroup}
-          onClose={() => setViewingGroup(null)}
-          onSeen={markSeen}
-        />
-      )}
-    </View>
+      {composing && <PostComposerSheet onClose={() => setComposing(false)} onPublished={list.reload} />}
+    </>
   );
 }
 
@@ -98,6 +160,19 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.8,
+  },
+  results: {
+    marginTop: Spacing.three,
+  },
+  hint: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: Spacing.two,
+    paddingHorizontal: Spacing.four,
+  },
+  loading: {
+    marginTop: Spacing.four,
   },
   composer: {
     flexDirection: 'row',
@@ -120,22 +195,6 @@ const styles = StyleSheet.create({
     marginTop: Spacing.four,
   },
   feed: {
-    gap: Spacing.three - Spacing.one,
     marginTop: Spacing.three,
-  },
-  empty: {
-    alignItems: 'center',
-    gap: Spacing.one,
-    marginTop: Spacing.four,
-  },
-  emptyTitle: {
-    color: Colors.text,
-    fontSize: 17,
-    fontWeight: 700,
-  },
-  emptyText: {
-    color: Colors.textSecondary,
-    fontSize: 14,
-    textAlign: 'center',
   },
 });

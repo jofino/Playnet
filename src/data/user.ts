@@ -1,8 +1,6 @@
 import type { PreferenceKey } from '@/constants/sport-preferences';
 import type { Sport } from '@/constants/sports';
 
-// Dados de exemplo até existir um backend.
-
 /** Ponto do histórico de rating: o nivelamento ou o resultado de uma partida. */
 export type RatingEntry = {
   date: string;
@@ -14,6 +12,7 @@ export type RatingEntry = {
 export type User = {
   id: string;
   name: string;
+  email: string;
   /** URL da foto de perfil; `null` mostra as iniciais. */
   photoUri: string | null;
   /** Cidade exibida no perfil, ex.: "São Paulo, SP"; `null` = não informada. */
@@ -35,26 +34,4 @@ export type User = {
   /** Preferências de jogador em cada esporte (opções de SPORT_PREFERENCES). */
   preferences: Partial<Record<Sport, Partial<Record<PreferenceKey, string>>>>;
   games: number;
-  followers: number;
-  /** Ids (PLAYERS) dos jogadores que o usuário segue. */
-  followingIds: string[];
-};
-
-export const MOCK_USER: User = {
-  id: 'me',
-  name: 'João Vitor Figueiredo',
-  photoUri: null,
-  location: null,
-  playnetCoins: 1250,
-  // Contas novas começam sem título e sem banner.
-  ownedTitles: [],
-  ownedBanners: [],
-  currentTitle: null,
-  currentBanner: null,
-  ratings: {},
-  ratingHistory: {},
-  preferences: {},
-  games: 0,
-  followers: 0,
-  followingIds: ['mariana-costa'],
 };

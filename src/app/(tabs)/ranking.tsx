@@ -61,8 +61,7 @@ export default function RankingScreen() {
           </View>
         ) : (
           <View style={[styles.section, styles.empty]}>
-            <Text style={styles.emptyTitle}>Nenhum jogador encontrado</Text>
-            <Text style={styles.emptyText}>Tente outro esporte ou outra região.</Text>
+            <Text style={styles.emptyText}>Ainda não há jogadores no ranking</Text>
           </View>
         )}
       </ScreenScrollView>

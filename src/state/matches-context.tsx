@@ -1,110 +1,112 @@
-import { createContext, use, useReducer, type ReactNode } from 'react';
+import { createContext, use, useCallback, useEffect, useState, type ReactNode } from 'react';
 
-import type { SetScore } from '@/constants/scoring';
-import type { Sport } from '@/constants/sports';
-import { MOCK_MATCHES, openSpots, type Match } from '@/data/matches';
-import { ME } from '@/data/players';
-
-export type NewMatch = {
-  sport: Sport;
-  venueId: string;
-  date: string;
-  formatId: string;
-  playersPerSide: 1 | 2;
-  /** Parceiro do usuário (duplas), se já tiver. */
-  partner?: string;
-  /** Adversários convidados, se houver. */
-  opponents?: string[];
-};
-
-type Action =
-  | { type: 'create'; match: NewMatch; id: string }
-  | { type: 'join'; id: string }
-  | { type: 'leave'; id: string }
-  | { type: 'reportResult'; id: string; result: SetScore[] };
-
-function reducer(matches: Match[], action: Action): Match[] {
-  switch (action.type) {
-    case 'create': {
-      const { partner, opponents = [], ...rest } = action.match;
-      return [
-        ...matches,
-        {
-          ...rest,
-          id: action.id,
-          createdBy: ME,
-          sides: [partner ? [ME, partner] : [ME], opponents],
-        },
-      ];
-    }
-    case 'join':
-      return matches.map((match) => {
-        if (match.id !== action.id || openSpots(match) === 0) return match;
-        // Entra no lado com vaga, preferindo completar o lado que já tem gente.
-        const sideIndex =
-          match.sides[0].length < match.playersPerSide &&
-          (match.sides[0].length > 0 || match.sides[1].length >= match.playersPerSide)
-            ? 0
-            : 1;
-        const sides: [string[], string[]] = [[...match.sides[0]], [...match.sides[1]]];
-        sides[sideIndex].push(ME);
-        return { ...match, sides };
-      });
-    case 'leave':
-      return matches.map((match) =>
-        match.id === action.id
-          ? {
-              ...match,
-              sides: [
-                match.sides[0].filter((name) => name !== ME),
-                match.sides[1].filter((name) => name !== ME),
-              ],
-            }
-          : match
-      );
-    case 'reportResult':
-      return matches.map((match) =>
-        match.id === action.id ? { ...match, result: action.result } : match
-      );
-  }
-}
+import type { Match } from '@/data/matches';
+import { useAuth } from '@/lib/auth-context';
+import {
+  createMatch as insertMatch,
+  fetchUpcomingMatches,
+  getMatchErrorMessage,
+  joinMatch as insertParticipant,
+  leaveMatch as deleteParticipant,
+  type NewMatch,
+} from '@/lib/partidas';
 
 type MatchesContextValue = {
+  /** Próximas partidas, da mais próxima para a mais distante. */
   matches: Match[];
-  createMatch: (match: NewMatch) => string;
-  joinMatch: (id: string) => void;
-  leaveMatch: (id: string) => void;
-  reportResult: (id: string, result: SetScore[]) => void;
+  loading: boolean;
+  /** Falha ao carregar, já traduzida para exibir na tela. */
+  error: string | null;
+  refresh: () => Promise<void>;
+  /** Devolve o id da partida criada. */
+  createMatch: (match: NewMatch) => Promise<string>;
+  joinMatch: (id: string) => Promise<void>;
+  leaveMatch: (id: string) => Promise<void>;
 };
 
 const MatchesContext = createContext<MatchesContextValue | null>(null);
 
-/** Partidas da região, compartilhadas entre Jogar, Encontrar partida, perfis e detalhes. */
-export function MatchesProvider({ children }: { children: ReactNode }) {
-  const [matches, dispatch] = useReducer(reducer, MOCK_MATCHES);
+function MatchesState({ userId, children }: { userId?: string; children: ReactNode }) {
+  const [matches, setMatches] = useState<Match[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  function createMatch(match: NewMatch) {
-    const id = `p${Date.now()}`;
-    dispatch({ type: 'create', match, id });
-    return id;
-  }
+  const refresh = useCallback(async () => {
+    try {
+      const next = await fetchUpcomingMatches();
+      setMatches(next);
+      setError(null);
+    } catch (failure) {
+      setError(getMatchErrorMessage(failure));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Sem sessão não há o que carregar (as tabelas exigem usuário logado).
+  useEffect(() => {
+    if (!userId) return;
+    let active = true;
+
+    fetchUpcomingMatches()
+      .then((next) => {
+        if (active) setMatches(next);
+      })
+      .catch((failure) => {
+        if (active) setError(getMatchErrorMessage(failure));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [userId]);
 
   return (
     <MatchesContext
       value={{
         matches,
-        createMatch,
-        joinMatch: (id) => dispatch({ type: 'join', id }),
-        leaveMatch: (id) => dispatch({ type: 'leave', id }),
-        reportResult: (id, result) => dispatch({ type: 'reportResult', id, result }),
+        loading,
+        error,
+        refresh,
+        createMatch: async (match) => {
+          const id = await insertMatch(match);
+          await refresh();
+          return id;
+        },
+        joinMatch: async (id) => {
+          await insertParticipant(id);
+          await refresh();
+        },
+        leaveMatch: async (id) => {
+          if (!userId) return;
+          await deleteParticipant(id, userId);
+          await refresh();
+        },
       }}>
       {children}
     </MatchesContext>
   );
 }
 
+/** Partidas do Supabase, compartilhadas entre Jogar, Encontrar partida e detalhes. */
+export function MatchesProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+
+  // A chave descarta a lista da conta anterior quando outra entra.
+  return (
+    <MatchesState key={user?.id ?? 'sem-sessao'} userId={user?.id}>
+      {children}
+    </MatchesState>
+  );
+}
+
 export function useMatchesStore() {
   const context = use(MatchesContext);
-  if (!context) throw new Error('useMatchesStore precisa estar dentro de <MatchesProvider>.');
+  if (!context) {
+    throw new Error('useMatchesStore precisa estar dentro de <MatchesProvider>.');
+  }
   return context;
 }

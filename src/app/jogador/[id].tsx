@@ -1,74 +1,140 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
+import { ActivityIndicator, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/button';
-import { PostCard } from '@/components/community/post-card';
+import { PostFeed } from '@/components/community/post-feed';
 import { MatchCard } from '@/components/matches/match-card';
-import { ScheduleMatchSheet } from '@/components/matches/schedule-match-sheet';
 import { ProfileBanner } from '@/components/profile/profile-banner';
 import { ScreenScrollView } from '@/components/screen-scroll-view';
 import { SectionHeader } from '@/components/section-header';
-import { SportIcon } from '@/components/sport-icon';
-import { SUPPORTED_SPORTS, type Sport } from '@/constants/sports';
+import { ERROR_ICON, StateMessage } from '@/components/state-message';
 import { Colors, Spacing } from '@/constants/theme';
-import { byDate, isFinished } from '@/data/matches';
-import { getPlayer } from '@/data/players';
-import { RANKED_PLAYERS } from '@/data/ranking';
 import { useLightStatusBar } from '@/hooks/use-light-status-bar';
-import { useCommunity } from '@/state/community-context';
-import { useMatchesStore } from '@/state/matches-context';
+import { isNearEnd, usePostList } from '@/hooks/use-post-list';
+import { useUserActivity } from '@/hooks/use-user-activity';
+import { useUserCounts } from '@/hooks/use-user-counts';
+import { getDataErrorMessage } from '@/lib/data-errors';
+import { fetchProfile, followUser, isFollowing, unfollowUser, type Profile } from '@/lib/perfis';
 import { useUser } from '@/state/user-context';
 
 const AVATAR_SIZE = 84;
 const AVATAR_OVERLAP = 42;
 
-/** Posição do jogador no ranking nacional do esporte. */
-function rankingPosition(name: string, sport: Sport) {
-  const ordered = RANKED_PLAYERS.filter((row) => row.sport === sport).sort((a, b) => b.rating - a.rating);
-  return ordered.findIndex((row) => row.name === name) + 1;
-}
-
-/** Perfil público de outro jogador. */
+/** Perfil público de outra pessoa. */
 export default function JogadorScreen() {
   useLightStatusBar();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { user, updateUser } = useUser();
-  const { matches, createMatch } = useMatchesStore();
-  const { posts } = useCommunity();
-  const [inviting, setInviting] = useState(false);
+  const { user } = useUser();
+  const activity = useUserActivity(id);
+  const { counts, setCounts, error: countsError, reload: reloadCounts } = useUserCounts(id);
+  const posts = usePostList({ kind: 'author', authorId: id });
+  const [player, setPlayer] = useState<Profile | null>(null);
+  const [following, setFollowing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [followError, setFollowError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const player = getPlayer(id);
+  const load = useCallback(async () => {
+    try {
+      const [profile, followed] = await Promise.all([fetchProfile(id), isFollowing(user.id, id)]);
+      setPlayer(profile);
+      setFollowing(followed);
+      setError(null);
+    } catch (failure) {
+      setError(getDataErrorMessage(failure));
+    } finally {
+      setLoading(false);
+    }
+  }, [id, user.id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
+
+  if (id === user.id) return <Redirect href="/perfil" />;
+
+  if (loading) {
+    return (
+      <View style={styles.missing}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
   if (!player) {
     return (
       <View style={styles.missing}>
-        <Text style={styles.name}>Jogador não encontrado</Text>
+        {error ? (
+          <StateMessage
+            icon={ERROR_ICON}
+            text={error}
+            onRetry={() => {
+              setLoading(true);
+              load();
+            }}
+          />
+        ) : (
+          <Text style={styles.name}>Jogador não encontrado</Text>
+        )}
       </View>
     );
   }
 
-  const following = user.followingIds.includes(player.id);
-  const sports = SUPPORTED_SPORTS.filter((sport) => player.ratings[sport] !== undefined);
-  const playerMatches = matches.filter((m) => m.sides.some((side) => side.includes(player.name)));
-  const upcoming = playerMatches.filter((m) => !isFinished(m)).sort(byDate);
-  const played = playerMatches.filter((m) => isFinished(m)).sort((a, b) => byDate(b, a));
-  const playerPosts = posts.filter((post) => post.author === player.name);
-
-  function toggleFollow() {
-    updateUser({
-      followingIds: following
-        ? user.followingIds.filter((item) => item !== player?.id)
-        : [...user.followingIds, player!.id],
-    });
+  async function refresh() {
+    setRefreshing(true);
+    await Promise.all([load(), reloadCounts(), activity.reload(), posts.refresh()]);
+    setRefreshing(false);
   }
+
+  /** Atualiza a tela na hora e desfaz se o banco recusar. */
+  async function toggleFollow() {
+    const next = !following;
+    const delta = next ? 1 : -1;
+    const changeFollowers = (change: number) =>
+      setCounts((current) => current && { ...current, followers: current.followers + change });
+
+    setFollowing(next);
+    changeFollowers(delta);
+    setFollowError(null);
+    setSaving(true);
+    try {
+      await (next ? followUser(id) : unfollowUser(user.id, id));
+      await reloadCounts();
+    } catch (failure) {
+      setFollowing(!next);
+      changeFollowers(-delta);
+      setFollowError(getDataErrorMessage(failure));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const message = followError ?? error ?? countsError ?? activity.error;
 
   return (
     <View style={styles.screen}>
-      <ScreenScrollView withTabBar={false}>
+      <ScreenScrollView
+        withTabBar={false}
+        scrollEventThrottle={200}
+        onScroll={(event) => {
+          if (isNearEnd(event)) posts.loadMore();
+        }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={refresh}
+            colors={[Colors.primary]}
+            tintColor={Colors.primary}
+          />
+        }>
         <View style={styles.section}>
-          <ProfileBanner bannerId={player.bannerId} style={styles.banner} />
+          <ProfileBanner bannerId={null} style={styles.banner} />
         </View>
         <View style={[styles.section, styles.identity]}>
           <View style={styles.avatarRing}>
@@ -76,15 +142,25 @@ export default function JogadorScreen() {
           </View>
           <View style={styles.identityTexts}>
             <Text style={styles.name}>{player.name}</Text>
-            <Text style={styles.location}>📍 {player.location}</Text>
           </View>
         </View>
-        <Text style={[styles.section, styles.bio]}>{player.bio}</Text>
 
         <View style={[styles.section, styles.stats]}>
-          <Stat value={played.length} label="Jogos" />
-          <Stat value={player.followers + (following ? 1 : 0)} label="Seguidores" />
-          <Stat value={player.following} label="Seguidos" />
+          <Stat
+            value={counts?.games ?? null}
+            label="Jogos"
+            onPress={() => router.push({ pathname: '/jogos/[id]', params: { id } })}
+          />
+          <Stat
+            value={counts?.followers ?? null}
+            label="Seguidores"
+            onPress={() => router.push({ pathname: '/seguidores/[id]', params: { id } })}
+          />
+          <Stat
+            value={counts?.friends ?? null}
+            label="Amigos"
+            onPress={() => router.push({ pathname: '/amigos/[id]', params: { id } })}
+          />
         </View>
 
         <View style={[styles.section, styles.actions]}>
@@ -92,80 +168,59 @@ export default function JogadorScreen() {
             label={following ? 'Seguindo' : 'Seguir'}
             variant={following ? 'outline' : 'solid'}
             onPress={toggleFollow}
+            disabled={saving}
             style={styles.actionButton}
           />
-          <Button label="Convidar" variant="outline" onPress={() => setInviting(true)} style={styles.actionButton} />
         </View>
+        {!!message && (
+          <Text style={[styles.section, styles.error]} accessibilityRole="alert" accessibilityLiveRegion="polite">
+            {message}
+          </Text>
+        )}
 
-        <SectionHeader title="Rating" style={[styles.section, styles.sectionSpacing]} />
-        <View style={[styles.section, styles.ratings]}>
-          {sports.map((sport) => (
-            <View key={sport} style={styles.rating}>
-              <SportIcon sport={sport} size={24} />
-              <View style={styles.ratingTexts}>
-                <Text style={styles.ratingSport}>{sport}</Text>
-                <Text style={styles.ratingPosition}>{rankingPosition(player.name, sport)}º no ranking</Text>
-              </View>
-              <Text style={styles.ratingValue}>{player.ratings[sport]?.toLocaleString('pt-BR')}</Text>
-            </View>
-          ))}
-        </View>
-
-        {upcoming.length > 0 && (
+        {activity.upcoming.length > 0 && (
           <>
             <SectionHeader title="Próximas partidas" style={[styles.section, styles.sectionSpacing]} />
             <View style={[styles.section, styles.list]}>
-              {upcoming.map((match) => (
+              {activity.upcoming.map((match) => (
                 <MatchCard key={match.id} match={match} />
               ))}
             </View>
           </>
         )}
 
-        {played.length > 0 && (
+        {activity.played.length > 0 && (
           <>
             <SectionHeader title="Partidas jogadas" style={[styles.section, styles.sectionSpacing]} />
             <View style={[styles.section, styles.list]}>
-              {played.map((match) => (
+              {activity.played.map((match) => (
                 <MatchCard key={match.id} match={match} />
               ))}
             </View>
           </>
         )}
 
-        {playerPosts.length > 0 && (
-          <>
-            <SectionHeader title="Publicações" style={[styles.section, styles.sectionSpacing]} />
-            <View style={[styles.section, styles.list]}>
-              {playerPosts.map((post) => (
-                <PostCard key={post.id} post={post} />
-              ))}
-            </View>
-          </>
-        )}
-      </ScreenScrollView>
-
-      {inviting && (
-        <ScheduleMatchSheet
-          invitee={player.name}
-          initialSport={sports[0]}
-          onClose={() => setInviting(false)}
-          onSchedule={(match) => {
-            const matchId = createMatch(match);
-            router.push({ pathname: '/partida/[id]', params: { id: matchId } });
-          }}
+        <SectionHeader title="Publicações" style={[styles.section, styles.sectionSpacing]} />
+        <PostFeed
+          list={posts}
+          emptyIcon={{ ios: 'bubble.left.and.bubble.right', android: 'forum', web: 'forum' }}
+          emptyText="Nenhuma publicação ainda."
         />
-      )}
+      </ScreenScrollView>
     </View>
   );
 }
 
-function Stat({ value, label }: { value: number; label: string }) {
+function Stat({ value, label, onPress }: { value: number | null; label: string; onPress: () => void }) {
   return (
-    <View style={styles.stat}>
-      <Text style={styles.statValue}>{value}</Text>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${label}: ${value ?? 'carregando'}`}
+      style={({ pressed }) => [styles.stat, pressed && styles.pressed]}>
+      <Text style={styles.statValue}>{value ?? '–'}</Text>
       <Text style={styles.statLabel}>{label}</Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -178,6 +233,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    padding: Spacing.four,
     backgroundColor: Colors.background,
   },
   section: {
@@ -214,17 +270,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 800,
   },
-  location: {
-    color: Colors.textSecondary,
-    fontSize: 15,
-    fontWeight: 600,
-  },
-  bio: {
-    color: Colors.text,
-    fontSize: 15,
-    lineHeight: 21,
-    marginTop: Spacing.three,
-  },
   stats: {
     flexDirection: 'row',
     marginTop: Spacing.four,
@@ -233,6 +278,9 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     gap: Spacing.one,
+  },
+  pressed: {
+    opacity: 0.7,
   },
   statValue: {
     color: Colors.text,
@@ -251,34 +299,11 @@ const styles = StyleSheet.create({
   actionButton: {
     flex: 1,
   },
-  ratings: {
-    gap: Spacing.two,
-  },
-  rating: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.three,
-    padding: Spacing.three,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  ratingTexts: {
-    flex: 1,
-  },
-  ratingSport: {
-    color: Colors.text,
-    fontSize: 15,
-    fontWeight: 700,
-  },
-  ratingPosition: {
-    color: Colors.textSecondary,
-    fontSize: 13,
-  },
-  ratingValue: {
-    color: Colors.primary,
-    fontSize: 20,
-    fontWeight: 800,
+  error: {
+    color: '#D92D20',
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: Spacing.two,
   },
   list: {
     gap: Spacing.three - Spacing.one,

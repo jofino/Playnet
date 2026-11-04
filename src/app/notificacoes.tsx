@@ -2,7 +2,7 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { ScreenScrollView } from '@/components/screen-scroll-view';
 import { Colors, Spacing } from '@/constants/theme';
-import { MOCK_NOTIFICATIONS, type AppNotification } from '@/data/notifications';
+import { NOTIFICATIONS, type AppNotification } from '@/data/notifications';
 import { useLightStatusBar } from '@/hooks/use-light-status-bar';
 
 export default function NotificacoesScreen() {
@@ -10,13 +10,13 @@ export default function NotificacoesScreen() {
 
   return (
     <ScreenScrollView withTabBar={false}>
-      {MOCK_NOTIFICATIONS.length > 0 ? (
+      {NOTIFICATIONS.length > 0 ? (
         <View style={styles.list}>
-          {MOCK_NOTIFICATIONS.map((notification, index) => (
+          {NOTIFICATIONS.map((notification, index) => (
             <NotificationRow
               key={notification.id}
               notification={notification}
-              isLast={index === MOCK_NOTIFICATIONS.length - 1}
+              isLast={index === NOTIFICATIONS.length - 1}
             />
           ))}
         </View>

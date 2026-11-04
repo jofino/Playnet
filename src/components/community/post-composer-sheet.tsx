@@ -1,38 +1,40 @@
-import { Image } from 'expo-image';
 import { useState } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { Button } from '@/components/button';
 import { Sheet } from '@/components/sheet';
-import { SportChips } from '@/components/sport-chips';
-import type { Sport } from '@/constants/sports';
 import { Colors, Spacing } from '@/constants/theme';
-import { pickImage } from '@/hooks/use-pick-image';
-
-const MAX_LENGTH = 500;
+import { POST_MAX_LENGTH } from '@/data/community';
+import { createPost } from '@/lib/comunidade';
+import { getDataErrorMessage } from '@/lib/data-errors';
 
 type PostComposerSheetProps = {
   onClose: () => void;
-  onPublish: (post: { text: string; sport?: Sport; imageUri?: string }) => void;
+  onPublished: () => void;
 };
 
-/** Nova publicação: texto, esporte (opcional) e foto (opcional). */
-export function PostComposerSheet({ onClose, onPublish }: PostComposerSheetProps) {
+/** Nova publicação, só de texto. */
+export function PostComposerSheet({ onClose, onPublished }: PostComposerSheetProps) {
   const [text, setText] = useState('');
-  const [sport, setSport] = useState<Sport | null>(null);
-  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const canPublish = text.trim() !== '' || imageUri !== null;
+  const trimmed = text.trim();
+  const canPublish = trimmed !== '' && trimmed.length <= POST_MAX_LENGTH;
 
-  async function choosePhoto() {
-    const uri = await pickImage();
-    if (uri) setImageUri(uri);
-  }
+  async function publish() {
+    if (!canPublish || submitting) return;
 
-  function publish() {
-    if (!canPublish) return;
-    onPublish({ text: text.trim(), sport: sport ?? undefined, imageUri: imageUri ?? undefined });
-    onClose();
+    setSubmitting(true);
+    setError(null);
+    try {
+      await createPost(trimmed);
+      onPublished();
+      onClose();
+    } catch (failure) {
+      setError(getDataErrorMessage(failure));
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -42,36 +44,36 @@ export function PostComposerSheet({ onClose, onPublish }: PostComposerSheetProps
       onClose={onClose}
       footer={
         <>
-          <Button label="Cancelar" variant="outline" onPress={onClose} style={styles.footerButton} />
-          <Button label="Publicar" onPress={publish} disabled={!canPublish} style={styles.footerButton} />
+          <Button label="Cancelar" variant="outline" onPress={onClose} disabled={submitting} style={styles.footerButton} />
+          <Button
+            label="Publicar"
+            onPress={publish}
+            disabled={!canPublish || submitting}
+            icon={submitting ? <ActivityIndicator size="small" color={Colors.onPrimary} /> : undefined}
+            style={styles.footerButton}
+          />
         </>
       }>
       <View style={styles.content}>
         <TextInput
           value={text}
           onChangeText={setText}
+          editable={!submitting}
           placeholder="Conte como foi o jogo, procure parceiros, compartilhe dicas…"
           placeholderTextColor={Colors.textSecondary}
           multiline
-          maxLength={MAX_LENGTH}
+          maxLength={POST_MAX_LENGTH}
           accessibilityLabel="Texto da publicação"
           style={styles.input}
         />
         <Text style={styles.counter}>
-          {text.length}/{MAX_LENGTH}
+          {text.length}/{POST_MAX_LENGTH}
         </Text>
-
-        {imageUri ? (
-          <View style={styles.imageWrap}>
-            <Image source={{ uri: imageUri }} style={styles.image} contentFit="cover" />
-            <Button label="Remover foto" size="small" variant="outline" onPress={() => setImageUri(null)} />
-          </View>
-        ) : (
-          <Button label="Adicionar foto" size="small" variant="outline" onPress={choosePhoto} style={styles.photoButton} />
+        {!!error && (
+          <Text style={styles.error} accessibilityRole="alert" accessibilityLiveRegion="polite">
+            {error}
+          </Text>
         )}
-
-        <Text style={styles.label}>Esporte (opcional)</Text>
-        <SportChips value={sport} onChange={setSport} allLabel="Nenhum" />
       </View>
     </Sheet>
   );
@@ -97,23 +99,9 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontSize: 12,
   },
-  imageWrap: {
-    gap: Spacing.two,
-    alignItems: 'flex-start',
-  },
-  image: {
-    width: '100%',
-    aspectRatio: 4 / 3,
-    borderRadius: 12,
-  },
-  photoButton: {
-    alignSelf: 'flex-start',
-  },
-  label: {
-    color: Colors.text,
-    fontSize: 15,
-    fontWeight: 800,
-    marginTop: Spacing.two,
+  error: {
+    color: '#D92D20',
+    fontSize: 13,
   },
   footerButton: {
     flex: 1,

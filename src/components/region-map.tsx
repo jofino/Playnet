@@ -2,7 +2,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Ellipse, Path } from 'react-native-svg';
 
 import { Colors, Spacing } from '@/constants/theme';
-import { USER_LOCATION, USER_REGION, VENUES, type Venue } from '@/data/venues';
+import { USER_LOCATION, VENUES, type Venue } from '@/data/venues';
 
 /** Pino no mapa. Posição de 0 a 1 (esquerda→direita, topo→base). */
 export type MapPin = {
@@ -85,7 +85,7 @@ export function RegionMap({ pins, selectedPinId, onSelectPin, showUserLocation =
       })}
 
       <View style={styles.caption} pointerEvents="none">
-        <Text style={styles.captionText}>Mapa ilustrativo · {USER_REGION}</Text>
+        <Text style={styles.captionText}>Mapa ilustrativo</Text>
       </View>
     </View>
   );

@@ -1,15 +1,11 @@
-import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { Button } from '@/components/button';
 import { ScreenScrollView } from '@/components/screen-scroll-view';
 import { SportChips } from '@/components/sport-chips';
-import { CreateTournamentSheet } from '@/components/tournaments/create-tournament-sheet';
 import { TournamentCard } from '@/components/tournaments/tournament-card';
 import type { Sport } from '@/constants/sports';
 import { Colors, Spacing } from '@/constants/theme';
-import { ME } from '@/data/players';
 import { tournamentStatus, type TournamentStatus } from '@/data/tournaments';
 import { useLightStatusBar } from '@/hooks/use-light-status-bar';
 import { useTournaments } from '@/state/tournaments-context';
@@ -19,10 +15,8 @@ const STATUS_ORDER: TournamentStatus[] = ['Inscrições abertas', 'Em andamento'
 
 export default function TorneiosScreen() {
   useLightStatusBar();
-  const router = useRouter();
-  const { tournaments, createTournament } = useTournaments();
+  const { tournaments } = useTournaments();
   const [sport, setSport] = useState<Sport | null>(null);
-  const [creating, setCreating] = useState(false);
 
   const visible = tournaments
     .filter((t) => !sport || t.sport === sport)
@@ -36,28 +30,18 @@ export default function TorneiosScreen() {
     <View style={styles.screen}>
       <ScreenScrollView withTabBar={false}>
         <View style={[styles.section, styles.intro]}>
-          <Text style={styles.introText}>Dispute torneios na sua região ou organize o seu.</Text>
-          <Button label="Criar torneio" size="small" onPress={() => setCreating(true)} />
+          <Text style={styles.introText}>Dispute torneios na sua região.</Text>
         </View>
         <SportChips value={sport} onChange={setSport} allLabel="Todos" style={[styles.section, styles.filters]} />
         <View style={[styles.section, styles.list]}>
           {visible.length > 0 ? (
             visible.map((tournament) => <TournamentCard key={tournament.id} tournament={tournament} />)
           ) : (
-            <Text style={styles.empty}>Nenhum torneio deste esporte por enquanto. Que tal criar um?</Text>
+            <Text style={styles.empty}>Nenhum torneio disponível por enquanto</Text>
           )}
         </View>
       </ScreenScrollView>
 
-      {creating && (
-        <CreateTournamentSheet
-          onClose={() => setCreating(false)}
-          onCreate={(tournament, firstEntry) => {
-            const id = createTournament(tournament, ME, firstEntry);
-            router.push({ pathname: '/torneio/[id]', params: { id } });
-          }}
-        />
-      )}
     </View>
   );
 }

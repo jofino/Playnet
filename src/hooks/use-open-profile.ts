@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 
 import { ME, getPlayerByName } from '@/data/players';
+import { useUser } from '@/state/user-context';
 
 /** Abre o perfil de um jogador pelo nome ("Você" leva à aba Perfil). */
 export function useOpenProfile() {
@@ -13,6 +14,20 @@ export function useOpenProfile() {
     }
     const player = getPlayerByName(name);
     if (player) router.push({ pathname: '/jogador/[id]', params: { id: player.id } });
+  };
+}
+
+/** Abre o perfil de um usuário real pelo id (o próprio usuário vai para a aba Perfil). */
+export function useOpenUserProfile() {
+  const router = useRouter();
+  const { user } = useUser();
+
+  return (id: string) => {
+    if (id === user.id) {
+      router.navigate('/perfil');
+      return;
+    }
+    router.push({ pathname: '/jogador/[id]', params: { id } });
   };
 }
 

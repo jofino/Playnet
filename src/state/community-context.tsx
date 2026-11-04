@@ -1,46 +1,16 @@
 import { createContext, use, useReducer, type ReactNode } from 'react';
 
-import type { Sport } from '@/constants/sports';
-import { MOCK_POSTS, MOCK_STORIES, type Post, type StoryGroup, type StoryItem } from '@/data/community';
+import { type StoryGroup, type StoryItem } from '@/data/community';
 import { ME } from '@/data/players';
 
-type State = { posts: Post[]; stories: StoryGroup[] };
+type State = { stories: StoryGroup[] };
 
 type Action =
-  | { type: 'addPost'; post: Post }
-  | { type: 'toggleLike'; postId: string }
-  | { type: 'addComment'; postId: string; text: string }
   | { type: 'addStory'; item: StoryItem }
   | { type: 'markSeen'; author: string };
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
-    case 'addPost':
-      return { ...state, posts: [action.post, ...state.posts] };
-    case 'toggleLike':
-      return {
-        ...state,
-        posts: state.posts.map((post) =>
-          post.id === action.postId
-            ? { ...post, likedByMe: !post.likedByMe, likes: post.likes + (post.likedByMe ? -1 : 1) }
-            : post
-        ),
-      };
-    case 'addComment':
-      return {
-        ...state,
-        posts: state.posts.map((post) =>
-          post.id === action.postId
-            ? {
-                ...post,
-                comments: [
-                  ...post.comments,
-                  { id: `c${Date.now()}`, author: ME, text: action.text, createdAt: new Date().toISOString() },
-                ],
-              }
-            : post
-        ),
-      };
     case 'addStory': {
       const mine = state.stories.find((group) => group.author === ME);
       const others = state.stories.filter((group) => group.author !== ME);
@@ -63,38 +33,20 @@ function reducer(state: State, action: Action): State {
 }
 
 type CommunityContextValue = State & {
-  addPost: (post: { text: string; sport?: Sport; imageUri?: string }) => void;
-  toggleLike: (postId: string) => void;
-  addComment: (postId: string, text: string) => void;
   addStory: (story: Omit<StoryItem, 'id' | 'createdAt'>) => void;
   markSeen: (author: string) => void;
 };
 
 const CommunityContext = createContext<CommunityContextValue | null>(null);
 
-/** Posts e stories da aba Comunidade. */
+/** Stories da aba Comunidade, ainda sem tabela no banco; as publicações vêm de lib/comunidade. */
 export function CommunityProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, { posts: MOCK_POSTS, stories: MOCK_STORIES });
+  const [state, dispatch] = useReducer(reducer, { stories: [] });
 
   return (
     <CommunityContext
       value={{
         ...state,
-        addPost: (post) =>
-          dispatch({
-            type: 'addPost',
-            post: {
-              ...post,
-              id: `post${Date.now()}`,
-              author: ME,
-              createdAt: new Date().toISOString(),
-              likes: 0,
-              likedByMe: false,
-              comments: [],
-            },
-          }),
-        toggleLike: (postId) => dispatch({ type: 'toggleLike', postId }),
-        addComment: (postId, text) => dispatch({ type: 'addComment', postId, text }),
         addStory: (story) =>
           dispatch({
             type: 'addStory',

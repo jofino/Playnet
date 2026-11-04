@@ -1,7 +1,7 @@
 import { createContext, use, useReducer, type ReactNode } from 'react';
 
 import type { SetScore } from '@/constants/scoring';
-import { MOCK_TOURNAMENTS, seedOrder, type Tournament } from '@/data/tournaments';
+import { seedOrder, type Tournament } from '@/data/tournaments';
 import { generateBracket, recordBracketResult } from '@/utils/bracket';
 
 export type NewTournament = Omit<Tournament, 'id' | 'entries' | 'organizer' | 'bracket'>;
@@ -57,7 +57,7 @@ type TournamentsContextValue = {
 const TournamentsContext = createContext<TournamentsContextValue | null>(null);
 
 export function TournamentsProvider({ children }: { children: ReactNode }) {
-  const [tournaments, dispatch] = useReducer(reducer, MOCK_TOURNAMENTS);
+  const [tournaments, dispatch] = useReducer(reducer, [] as Tournament[]);
 
   function createTournament(tournament: NewTournament, organizer: string, firstEntry?: string[]) {
     const id = `t${Date.now()}`;

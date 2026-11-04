@@ -1,5 +1,6 @@
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/button';
@@ -12,6 +13,7 @@ import { RatingChart } from '@/components/profile/rating-chart';
 import { RatingHistoryChart } from '@/components/profile/rating-history-chart';
 import { RatingSheet } from '@/components/profile/rating-sheet';
 import { SignOutButton } from '@/components/profile/sign-out-button';
+import { ERROR_ICON, StateMessage } from '@/components/state-message';
 import { ScreenHeader } from '@/components/screen-header';
 import { ScreenScrollView } from '@/components/screen-scroll-view';
 import { SportChips } from '@/components/sport-chips';
@@ -23,6 +25,7 @@ import { useCosmeticsStore } from '@/hooks/use-cosmetics-store';
 import { useIsWideLayout } from '@/hooks/use-is-wide-layout';
 import { useProfilePhotoPicker } from '@/hooks/use-profile-photo-picker';
 import { useSportProfile } from '@/hooks/use-sport-profile';
+import { useUserCounts } from '@/hooks/use-user-counts';
 import { useUser } from '@/state/user-context';
 
 const AVATAR_SIZE = 84;
@@ -41,8 +44,11 @@ const MATCH_WINDOW: Record<MatchFilter, number | null> = {
 type OpenSheet = 'profile' | 'rating' | 'preferences' | null;
 
 export default function PerfilScreen() {
+  const router = useRouter();
   const isWide = useIsWideLayout();
   const { user } = useUser();
+  const { counts, error: countsError, reload: reloadCounts } = useUserCounts(user.id);
+  const [refreshing, setRefreshing] = useState(false);
   const { pickPhoto, uploading } = useProfilePhotoPicker();
   const { currentTitle } = useCosmeticsStore();
   const [sport, setSport] = useState<Sport>('Tênis');
@@ -58,11 +64,25 @@ export default function PerfilScreen() {
 
   const closeSheet = () => setOpenSheet(null);
 
+  async function refresh() {
+    setRefreshing(true);
+    await reloadCounts();
+    setRefreshing(false);
+  }
+
   return (
     <View style={styles.screen}>
       <ScreenHeader title="Perfil" />
 
-      <ScreenScrollView>
+      <ScreenScrollView
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={refresh}
+            colors={[Colors.primary]}
+            tintColor={Colors.primary}
+          />
+        }>
         <View style={styles.section}>
           <ProfileBanner bannerId={user.currentBanner} style={styles.banner} />
         </View>
@@ -79,6 +99,7 @@ export default function PerfilScreen() {
           </View>
           <View style={styles.identityTexts}>
             <Text style={styles.name}>{user.name}</Text>
+            <Text style={styles.email}>{user.email}</Text>
             {currentTitle && (
               <View style={styles.title}>
                 <Text style={styles.titleText}>
@@ -86,23 +107,30 @@ export default function PerfilScreen() {
                 </Text>
               </View>
             )}
-            <Pressable onPress={() => setOpenSheet('profile')} accessibilityRole="button">
-              {user.location ? (
-                <Text style={styles.location}>📍 {user.location}</Text>
-              ) : (
-                <Text style={styles.link}>Adicionar minha localização</Text>
-              )}
-            </Pressable>
           </View>
         </View>
 
         <View style={[styles.section, styles.stats]}>
-          <Stat value={user.games} label="Jogos" />
+          <Stat
+            value={counts?.games ?? null}
+            label="Jogos"
+            onPress={() => router.push({ pathname: '/jogos/[id]', params: { id: user.id } })}
+          />
           <View style={styles.statDivider} />
-          <Stat value={user.followers} label="Seguidores" />
+          <Stat
+            value={counts?.followers ?? null}
+            label="Seguidores"
+            onPress={() => router.push({ pathname: '/seguidores/[id]', params: { id: user.id } })}
+          />
           <View style={styles.statDivider} />
-          <Stat value={user.followingIds.length} label="Seguidos" />
+          <Stat
+            value={counts?.friends ?? null}
+            label="Amigos"
+            onPress={() => router.push({ pathname: '/amigos/[id]', params: { id: user.id } })}
+          />
         </View>
+
+        {!!countsError && <StateMessage icon={ERROR_ICON} text={countsError} onRetry={reloadCounts} />}
 
         <View style={[styles.section, styles.actions]}>
           <Button
@@ -221,12 +249,16 @@ export default function PerfilScreen() {
   );
 }
 
-function Stat({ value, label }: { value: number; label: string }) {
+function Stat({ value, label, onPress }: { value: number | null; label: string; onPress: () => void }) {
   return (
-    <View style={styles.stat}>
-      <Text style={styles.statValue}>{value}</Text>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${label}: ${value ?? 'carregando'}`}
+      style={({ pressed }) => [styles.stat, pressed && styles.pressed]}>
+      <Text style={styles.statValue}>{value ?? '–'}</Text>
       <Text style={styles.statLabel}>{label}</Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -273,6 +305,10 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 800,
   },
+  email: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+  },
   title: {
     alignSelf: 'flex-start',
     paddingHorizontal: Spacing.two + Spacing.half,
@@ -284,16 +320,6 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     fontSize: 13,
     fontWeight: 800,
-  },
-  location: {
-    color: Colors.textSecondary,
-    fontSize: 15,
-    fontWeight: 600,
-  },
-  link: {
-    color: Colors.primary,
-    fontSize: 15,
-    fontWeight: 600,
   },
 
   stats: {

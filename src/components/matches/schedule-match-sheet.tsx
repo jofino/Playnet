@@ -1,25 +1,26 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Button } from '@/components/button';
 import { Chip } from '@/components/chip';
-import { SelectField } from '@/components/select-field';
 import { Sheet } from '@/components/sheet';
 import { SportChips } from '@/components/sport-chips';
-import { MATCH_FORMATS, SPORT_MODALITIES, describeFormat } from '@/constants/scoring';
+import { TextField } from '@/components/text-field';
 import type { Sport } from '@/constants/sports';
 import { Colors, Spacing } from '@/constants/theme';
-import { PLAYERS } from '@/data/players';
-import { VENUES } from '@/data/venues';
-import type { NewMatch } from '@/state/matches-context';
+import { MATCH_LEVELS } from '@/data/matches';
+import { useNow } from '@/hooks/use-now';
+import { getMatchErrorMessage, type NewMatch } from '@/lib/partidas';
 import { formatShortDay } from '@/utils/date';
 
 const DAYS_AHEAD = 14;
 const HOURS = [7, 9, 11, 15, 17, 19, 21];
+const MIN_SPOTS = 1;
+const MAX_SPOTS = 20;
 
-function nextDays() {
+function nextDays(now: number) {
   return Array.from({ length: DAYS_AHEAD }, (_, index) => {
-    const date = new Date();
+    const date = new Date(now);
     date.setDate(date.getDate() + index);
     date.setHours(0, 0, 0, 0);
     return date;
@@ -28,132 +29,117 @@ function nextDays() {
 
 type ScheduleMatchSheetProps = {
   onClose: () => void;
-  onSchedule: (match: NewMatch) => void;
+  /** Cria a partida; se falhar, o painel continua aberto e mostra o erro. */
+  onSchedule: (match: NewMatch) => Promise<void>;
   /** Esporte já escolhido ao abrir. */
   initialSport?: Sport;
-  /** Jogador convidado como adversário (ex.: a partir do perfil dele). */
-  invitee?: string;
 };
 
-/** Marcar partida: esporte, modalidade, formato de pontuação, parceiro, local, dia e horário. */
-export function ScheduleMatchSheet({ onClose, onSchedule, initialSport, invitee }: ScheduleMatchSheetProps) {
-  const startSport = initialSport ?? 'Tênis';
-  const [sport, setSport] = useState<Sport>(startSport);
-  const [modality, setModality] = useState(SPORT_MODALITIES[startSport][0]);
-  const [formatId, setFormatId] = useState(MATCH_FORMATS[startSport][0].id);
-  const [partner, setPartner] = useState<string | null>(null);
-  const [venueId, setVenueId] = useState<string | null>(null);
+/** Marcar partida: esporte, nível, local, cidade, vagas, dia e horário. */
+export function ScheduleMatchSheet({ onClose, onSchedule, initialSport }: ScheduleMatchSheetProps) {
+  const [sport, setSport] = useState<Sport>(initialSport ?? 'Tênis');
+  const [level, setLevel] = useState<string>(MATCH_LEVELS[0]);
+  const [place, setPlace] = useState('');
+  const [city, setCity] = useState('');
+  const [spots, setSpots] = useState('4');
   const [dayIndex, setDayIndex] = useState<number | null>(null);
   const [hour, setHour] = useState<number | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const days = nextDays();
-  const modalities = SPORT_MODALITIES[sport];
-  const formats = MATCH_FORMATS[sport];
-  const format = formats.find((item) => item.id === formatId) ?? formats[0];
-  // Só os locais com quadra/mesa para o esporte escolhido.
-  const venues = VENUES.filter((venue) => venue.sports.includes(sport));
-  // Parceiros possíveis: quem joga o esporte (menos o convidado, que fica do outro lado).
-  const partners = PLAYERS.filter((player) => player.ratings[sport] !== undefined && player.name !== invitee)
-    .map((player) => ({ value: player.name, label: player.name }))
-    .sort((a, b) => a.label.localeCompare(b.label));
+  const now = useNow();
+  const days = nextDays(now);
+  const spotsNumber = Number(spots);
+  const spotsValid =
+    Number.isInteger(spotsNumber) && spotsNumber >= MIN_SPOTS && spotsNumber <= MAX_SPOTS;
 
-  const canSubmit = venueId !== null && dayIndex !== null && hour !== null;
+  const chosenDate =
+    dayIndex !== null && hour !== null ? new Date(days[dayIndex].getTime()) : null;
+  chosenDate?.setHours(hour as number);
+  const dateInPast = chosenDate !== null && chosenDate.getTime() < now;
 
-  function changeSport(next: Sport) {
-    setSport(next);
-    setModality(SPORT_MODALITIES[next][0]);
-    setFormatId(MATCH_FORMATS[next][0].id);
-    setPartner(null);
-    if (venueId && !VENUES.find((venue) => venue.id === venueId)?.sports.includes(next)) {
-      setVenueId(null);
+  const canSubmit =
+    place.trim() !== '' && city.trim() !== '' && spotsValid && chosenDate !== null && !dateInPast;
+
+  async function submit() {
+    if (!canSubmit || submitting || !chosenDate) return;
+
+    setSubmitting(true);
+    setError(null);
+    try {
+      await onSchedule({
+        sport,
+        level,
+        place: place.trim(),
+        city: city.trim(),
+        spots: spotsNumber,
+        date: chosenDate.toISOString(),
+      });
+      onClose();
+    } catch (failure) {
+      setError(getMatchErrorMessage(failure));
+      setSubmitting(false);
     }
-  }
-
-  function submit() {
-    if (venueId === null || dayIndex === null || hour === null) return;
-    const date = new Date(days[dayIndex]);
-    date.setHours(hour);
-    onSchedule({
-      sport,
-      venueId,
-      date: date.toISOString(),
-      formatId: format.id,
-      playersPerSide: modality === 'Duplas' ? 2 : 1,
-      partner: modality === 'Duplas' ? (partner ?? undefined) : undefined,
-      opponents: invitee ? [invitee] : [],
-    });
-    onClose();
   }
 
   return (
     <Sheet
       visible
-      title={invitee ? `Convidar ${invitee}` : 'Marcar partida'}
+      title="Marcar partida"
       onClose={onClose}
       footer={
         <>
-          <Button label="Cancelar" variant="outline" onPress={onClose} style={styles.footerButton} />
-          <Button label="Marcar" onPress={submit} disabled={!canSubmit} style={styles.footerButton} />
+          <Button
+            label="Cancelar"
+            variant="outline"
+            onPress={onClose}
+            disabled={submitting}
+            style={styles.footerButton}
+          />
+          <Button
+            label="Marcar"
+            onPress={submit}
+            disabled={!canSubmit || submitting}
+            icon={submitting ? <ActivityIndicator size="small" color={Colors.onPrimary} /> : undefined}
+            style={styles.footerButton}
+          />
         </>
       }>
       <View style={styles.form}>
         <Text style={styles.label}>Esporte</Text>
-        <SportChips value={sport} onChange={changeSport} />
+        <SportChips value={sport} onChange={setSport} />
 
-        {modalities.length > 1 && (
-          <>
-            <Text style={styles.label}>Modalidade</Text>
-            <View style={[styles.row, styles.wrap]}>
-              {modalities.map((item) => (
-                <Chip key={item} label={item} selected={item === modality} onPress={() => setModality(item)} />
-              ))}
-            </View>
-          </>
-        )}
-
-        <Text style={styles.label}>Formato</Text>
+        <Text style={styles.label}>Nível</Text>
         <View style={[styles.row, styles.wrap]}>
-          {formats.map((item) => (
-            <Chip
-              key={item.id}
-              label={item.label}
-              selected={item.id === format.id}
-              onPress={() => setFormatId(item.id)}
-            />
+          {MATCH_LEVELS.map((item) => (
+            <Chip key={item} label={item} selected={item === level} onPress={() => setLevel(item)} />
           ))}
         </View>
-        <Text style={styles.help}>{describeFormat(format)}</Text>
 
-        {modality === 'Duplas' && (
-          <>
-            <Text style={styles.label}>Sua dupla</Text>
-            <SelectField
-              label="Parceiro(a)"
-              value={partner}
-              options={partners}
-              allLabel="Deixar vaga aberta"
-              onChange={setPartner}
-            />
-          </>
-        )}
-
-        <Text style={styles.label}>Local</Text>
-        <View style={styles.venues}>
-          {venues.map((venue) => {
-            const selected = venue.id === venueId;
-            return (
-              <Pressable
-                key={venue.id}
-                onPress={() => setVenueId(venue.id)}
-                accessibilityRole="radio"
-                accessibilityState={{ checked: selected }}
-                style={[styles.venue, selected && styles.venueSelected]}>
-                <Text style={[styles.venueName, selected && styles.venueNameSelected]}>{venue.name}</Text>
-                <Text style={styles.venueNeighborhood}>{venue.neighborhood}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
+        <TextField
+          label="Local"
+          value={place}
+          onChangeText={setPlace}
+          editable={!submitting}
+          placeholder="Nome do clube ou da quadra"
+          autoCapitalize="words"
+        />
+        <TextField
+          label="Cidade"
+          value={city}
+          onChangeText={setCity}
+          editable={!submitting}
+          placeholder="Sua cidade"
+          autoCapitalize="words"
+        />
+        <TextField
+          label="Vagas (total de jogadores, incluindo você)"
+          value={spots}
+          onChangeText={setSpots}
+          editable={!submitting}
+          keyboardType="number-pad"
+          error={spots !== '' && !spotsValid ? `Informe de ${MIN_SPOTS} a ${MAX_SPOTS} vagas.` : undefined}
+        />
 
         <Text style={styles.label}>Dia</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
@@ -178,6 +164,13 @@ export function ScheduleMatchSheet({ onClose, onSchedule, initialSport, invitee 
             />
           ))}
         </View>
+        {dateInPast && <Text style={styles.error}>Esse horário já passou. Escolha outro.</Text>}
+
+        {!!error && (
+          <Text style={styles.error} accessibilityRole="alert" accessibilityLiveRegion="polite">
+            {error}
+          </Text>
+        )}
       </View>
     </Sheet>
   );
@@ -194,36 +187,8 @@ const styles = StyleSheet.create({
     fontWeight: 800,
     marginTop: Spacing.two,
   },
-  help: {
-    color: Colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  venues: {
-    gap: Spacing.two,
-  },
-  venue: {
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two + Spacing.half,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  venueSelected: {
-    borderColor: Colors.primary,
-    backgroundColor: '#FDF3F0',
-  },
-  venueName: {
-    color: Colors.text,
-    fontSize: 15,
-    fontWeight: 600,
-  },
-  venueNameSelected: {
-    color: Colors.primary,
-    fontWeight: 800,
-  },
-  venueNeighborhood: {
-    color: Colors.textSecondary,
+  error: {
+    color: '#D92D20',
     fontSize: 13,
   },
   row: {

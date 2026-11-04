@@ -41,6 +41,9 @@ function RootNavigator() {
         <Stack.Screen name="torneio/[id]" options={{ title: 'Torneio' }} />
         <Stack.Screen name="jogador/[id]" options={{ title: 'Perfil' }} />
         <Stack.Screen name="post/[id]" options={{ title: 'Publicação' }} />
+        <Stack.Screen name="jogos/[id]" options={{ title: 'Jogos' }} />
+        <Stack.Screen name="seguidores/[id]" options={{ title: 'Seguidores' }} />
+        <Stack.Screen name="amigos/[id]" options={{ title: 'Amigos' }} />
       </Stack.Protected>
     </Stack>
   );

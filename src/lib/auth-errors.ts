@@ -2,8 +2,8 @@ import { isAuthError, isAuthRetryableFetchError } from '@supabase/supabase-js';
 
 export const EMAIL_ALREADY_REGISTERED_MESSAGE = 'Este e-mail já está cadastrado. Tente entrar.';
 
-const NO_CONNECTION_MESSAGE = 'Sem conexão com a internet. Verifique sua rede e tente de novo.';
-const GENERIC_MESSAGE = 'Não foi possível concluir agora. Tente de novo em instantes.';
+export const NO_CONNECTION_MESSAGE = 'Sem conexão com a internet. Verifique sua rede e tente de novo.';
+export const GENERIC_MESSAGE = 'Não foi possível concluir agora. Tente de novo em instantes.';
 
 // A documentação do Supabase orienta identificar o erro pelo código, não pelo texto da mensagem.
 const MESSAGE_BY_CODE: Record<string, string> = {

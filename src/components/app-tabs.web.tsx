@@ -62,7 +62,7 @@ export default function AppTabs() {
   );
 }
 
-function TopTabButton({ children, isFocused, ...props }: TabTriggerSlotProps) {
+function TopTabButton({ children, isFocused, ...props }: Omit<TabTriggerSlotProps, 'ref'>) {
   return (
     <Pressable {...props} style={({ pressed }) => pressed && styles.pressed}>
       <ThemedView
@@ -97,7 +97,7 @@ function BottomTabButton({
   isFocused,
   icon,
   ...props
-}: TabTriggerSlotProps & { icon: AndroidSymbol }) {
+}: Omit<TabTriggerSlotProps, 'ref'> & { icon: AndroidSymbol }) {
   const color = isFocused ? Colors.primary : Colors.textSecondary;
 
   return (

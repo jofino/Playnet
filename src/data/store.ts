@@ -1,6 +1,6 @@
 import type { Sport } from '@/constants/sports';
 
-// Dados de exemplo até existir um backend.
+// Catálogo de cosméticos vendidos pelo próprio app.
 
 /** Título cosmético que o jogador compra com Playnet Coins e exibe no perfil. */
 export type StoreTitle = {
