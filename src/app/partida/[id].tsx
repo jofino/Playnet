@@ -7,7 +7,7 @@ import { PlayerChip } from '@/components/player-chip';
 import { ScreenScrollView } from '@/components/screen-scroll-view';
 import { SportIcon } from '@/components/sport-icon';
 import { Colors, Spacing } from '@/constants/theme';
-import { isFinished, openSpots, type Match } from '@/data/matches';
+import { isFinished, matchLevelLabel, openSpots, type Match } from '@/data/matches';
 import { useLightStatusBar } from '@/hooks/use-light-status-bar';
 import { useMatchAction } from '@/hooks/use-match-action';
 import { fetchMatch, getMatchErrorMessage } from '@/lib/partidas';
@@ -83,7 +83,7 @@ function MatchDetail({ match }: { match: Match }) {
             <SportIcon sport={match.sport} size={34} />
           </View>
           <View style={styles.heroTexts}>
-            <Text style={styles.sport}>{match.sport}</Text>
+            <Text style={styles.sport}>{match.sportName}</Text>
             <Text style={styles.date}>{formatMatchDate(match.date)}</Text>
             <Text style={styles.venue}>
               📍 {match.place} · {match.city}
@@ -93,7 +93,7 @@ function MatchDetail({ match }: { match: Match }) {
 
         <View style={[styles.section, styles.card]}>
           <Text style={styles.cardTitle}>Nível</Text>
-          <Text style={styles.cardText}>{match.level}</Text>
+          <Text style={styles.cardText}>{matchLevelLabel(match.level)}</Text>
         </View>
 
         <View style={[styles.section, styles.card]}>

@@ -1,22 +1,35 @@
+import { RATING_LEVELS, type RatingLevel } from '@/constants/rating';
 import type { Sport } from '@/constants/sports';
 
-export const MATCH_LEVELS = ['Iniciante', 'Intermediário', 'Avançado'] as const;
+/** Id gravado em `partidas.nivel`, os mesmos de RATING_LEVELS. */
+export type MatchLevel = RatingLevel['id'];
 
 export type MatchParticipant = { id: string; name: string };
 
 export type Match = {
   id: string;
-  creatorId: string;
+  /** `null` quando a conta de quem criou foi apagada. */
+  creatorId: string | null;
+  /** Identifica o esporte nos filtros e nos ícones. */
   sport: Sport;
+  /** Nome do esporte vindo do banco, para exibir. */
+  sportName: string;
   place: string;
+  cityId: number;
+  /** Cidade para exibir, ex.: "São Paulo, SP". */
   city: string;
-  level: string;
+  level: MatchLevel;
   /** Data e hora em ISO 8601. */
   date: string;
   /** Total de jogadores, incluindo quem criou. */
   spots: number;
   participants: MatchParticipant[];
 };
+
+/** Rótulo do nível para exibir, ex.: "Intermediário". */
+export function matchLevelLabel(level: MatchLevel) {
+  return RATING_LEVELS.find((item) => item.id === level)?.label ?? level;
+}
 
 export function isMine(match: Match, userId: string) {
   return match.participants.some((participant) => participant.id === userId);

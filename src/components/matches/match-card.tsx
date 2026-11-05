@@ -4,7 +4,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { Button } from '@/components/button';
 import { SportIcon } from '@/components/sport-icon';
 import { Colors, Spacing } from '@/constants/theme';
-import { isFinished, openSpots, type Match } from '@/data/matches';
+import { isFinished, matchLevelLabel, openSpots, type Match } from '@/data/matches';
 import { useMatchAction } from '@/hooks/use-match-action';
 import { formatMatchDate } from '@/utils/date';
 
@@ -33,12 +33,12 @@ export function MatchCard({ match, compact = false }: MatchCardProps) {
     <Pressable
       onPress={() => router.push({ pathname: '/partida/[id]', params: { id: match.id } })}
       accessibilityRole="button"
-      accessibilityLabel={`Partida de ${match.sport}, ${formatMatchDate(match.date)}, ${badge}`}
+      accessibilityLabel={`Partida de ${match.sportName}, ${formatMatchDate(match.date)}, ${badge}`}
       style={({ pressed }) => [styles.card, compact && styles.compact, pressed && styles.pressed]}>
       <View style={styles.headerRow}>
         <SportIcon sport={match.sport} size={20} />
         <Text style={styles.sport} numberOfLines={1}>
-          {match.sport}
+          {match.sportName}
         </Text>
         <Text style={[styles.badge, (mine || (spots > 0 && !finished)) && styles.badgeAccent]}>
           {badge}
@@ -52,7 +52,7 @@ export function MatchCard({ match, compact = false }: MatchCardProps) {
         👥 {match.participants.length} de {match.spots}{' '}
         {match.spots === 1 ? 'participante' : 'participantes'}
       </Text>
-      <Text style={styles.level}>{match.level}</Text>
+      <Text style={styles.level}>{matchLevelLabel(match.level)}</Text>
 
       {(canJoin || canLeave) && (
         <Button

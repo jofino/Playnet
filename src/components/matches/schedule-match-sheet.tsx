@@ -3,14 +3,18 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-nat
 
 import { Button } from '@/components/button';
 import { Chip } from '@/components/chip';
+import { CityPicker } from '@/components/city-picker';
 import { Sheet } from '@/components/sheet';
 import { SportChips } from '@/components/sport-chips';
 import { TextField } from '@/components/text-field';
-import type { Sport } from '@/constants/sports';
+import { RATING_LEVELS } from '@/constants/rating';
+import { SPORT_IDS, type Sport } from '@/constants/sports';
 import { Colors, Spacing } from '@/constants/theme';
-import { MATCH_LEVELS } from '@/data/matches';
+import type { City } from '@/data/cities';
+import type { MatchLevel } from '@/data/matches';
 import { useNow } from '@/hooks/use-now';
 import { getMatchErrorMessage, type NewMatch } from '@/lib/partidas';
+import { useUser } from '@/state/user-context';
 import { formatShortDay } from '@/utils/date';
 
 const DAYS_AHEAD = 14;
@@ -37,16 +41,19 @@ type ScheduleMatchSheetProps = {
 
 /** Marcar partida: esporte, nível, local, cidade, vagas, dia e horário. */
 export function ScheduleMatchSheet({ onClose, onSchedule, initialSport }: ScheduleMatchSheetProps) {
+  const { user } = useUser();
   const [sport, setSport] = useState<Sport>(initialSport ?? 'Tênis');
-  const [level, setLevel] = useState<string>(MATCH_LEVELS[0]);
+  const [level, setLevel] = useState<MatchLevel>(RATING_LEVELS[0].id);
   const [place, setPlace] = useState('');
-  const [city, setCity] = useState('');
+  // `undefined`: ainda não mexeu, então vale a cidade do perfil, mesmo que ela chegue depois de abrir.
+  const [cityChoice, setCityChoice] = useState<City | null | undefined>(undefined);
   const [spots, setSpots] = useState('4');
   const [dayIndex, setDayIndex] = useState<number | null>(null);
   const [hour, setHour] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const city = cityChoice === undefined ? user.city : cityChoice;
   const now = useNow();
   const days = nextDays(now);
   const spotsNumber = Number(spots);
@@ -59,19 +66,19 @@ export function ScheduleMatchSheet({ onClose, onSchedule, initialSport }: Schedu
   const dateInPast = chosenDate !== null && chosenDate.getTime() < now;
 
   const canSubmit =
-    place.trim() !== '' && city.trim() !== '' && spotsValid && chosenDate !== null && !dateInPast;
+    place.trim() !== '' && city !== null && spotsValid && chosenDate !== null && !dateInPast;
 
   async function submit() {
-    if (!canSubmit || submitting || !chosenDate) return;
+    if (!canSubmit || submitting || !chosenDate || !city) return;
 
     setSubmitting(true);
     setError(null);
     try {
       await onSchedule({
-        sport,
+        sportId: SPORT_IDS[sport],
         level,
         place: place.trim(),
-        city: city.trim(),
+        cityId: city.id,
         spots: spotsNumber,
         date: chosenDate.toISOString(),
       });
@@ -111,8 +118,13 @@ export function ScheduleMatchSheet({ onClose, onSchedule, initialSport }: Schedu
 
         <Text style={styles.label}>Nível</Text>
         <View style={[styles.row, styles.wrap]}>
-          {MATCH_LEVELS.map((item) => (
-            <Chip key={item} label={item} selected={item === level} onPress={() => setLevel(item)} />
+          {RATING_LEVELS.map((item) => (
+            <Chip
+              key={item.id}
+              label={item.label}
+              selected={item.id === level}
+              onPress={() => setLevel(item.id)}
+            />
           ))}
         </View>
 
@@ -124,14 +136,7 @@ export function ScheduleMatchSheet({ onClose, onSchedule, initialSport }: Schedu
           placeholder="Nome do clube ou da quadra"
           autoCapitalize="words"
         />
-        <TextField
-          label="Cidade"
-          value={city}
-          onChangeText={setCity}
-          editable={!submitting}
-          placeholder="Sua cidade"
-          autoCapitalize="words"
-        />
+        <CityPicker value={city} onChange={setCityChoice} disabled={submitting} />
         <TextField
           label="Vagas (total de jogadores, incluindo você)"
           value={spots}

@@ -1,5 +1,6 @@
 import type { PreferenceKey } from '@/constants/sport-preferences';
 import type { Sport } from '@/constants/sports';
+import type { City } from '@/data/cities';
 
 /** Ponto do histórico de rating: o nivelamento ou o resultado de uma partida. */
 export type RatingEntry = {
@@ -15,8 +16,8 @@ export type User = {
   email: string;
   /** URL da foto de perfil; `null` mostra as iniciais. */
   photoUri: string | null;
-  /** Cidade exibida no perfil, ex.: "São Paulo, SP"; `null` = não informada. */
-  location: string | null;
+  /** Cidade do perfil; `null` = não informada. */
+  city: City | null;
   /** Saldo da moeda virtual do app. */
   playnetCoins: number;
   /** Títulos comprados na Loja (ids de STORE_TITLES). */
@@ -31,7 +32,7 @@ export type User = {
   ratings: Partial<Record<Sport, number>>;
   /** Histórico do rating em cada esporte, do mais antigo ao mais recente. */
   ratingHistory: Partial<Record<Sport, RatingEntry[]>>;
-  /** Preferências de jogador em cada esporte (opções de SPORT_PREFERENCES). */
+  /** Preferências de jogador em cada esporte (ids das opções de SPORT_PREFERENCES). */
   preferences: Partial<Record<Sport, Partial<Record<PreferenceKey, string>>>>;
   games: number;
 };

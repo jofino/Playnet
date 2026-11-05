@@ -17,19 +17,19 @@
 -- a condição não é verdadeira; DELETE não alcança a partida, e ninguém a apaga pelo app.
 --
 -- Limitações conhecidas:
--- - Privilégios padrão (item 5): este arquivo foi escrito sem acesso ao banco, então o bloco lê
---   pg_default_acl ao executar. Em projetos Supabase é comum haver entradas de `postgres` e de
---   `supabase_admin` concedendo tudo a `anon` e `authenticated`, mas isso NÃO foi confirmado neste projeto.
---   Só são alterados os roles que o usuário atual pode alterar; os outros, como `supabase_admin` em geral,
---   são pulados, porque tentar derrubaria a transação. A consulta 3 mostra o que sobrou.
+-- - Privilégios padrão (item 5): CONFIRMADO no pg_default_acl deste projeto que `postgres` e
+--   `supabase_admin` concedem acesso total a `anon` e `authenticated` em tabelas, funções e sequências
+--   criadas por eles. O bloco lê pg_default_acl ao executar e só altera os roles que o usuário atual pode
+--   alterar; os outros, como `supabase_admin` em geral, são pulados, porque tentar derrubaria a transação.
+--   A consulta 3 mostra o que sobrou.
 -- - Funções novas continuam executáveis por PUBLIC, o que inclui `anon`. Esse padrão é global do Postgres,
 --   e `alter default privileges ... in schema` não consegue retirá-lo. A versão global afetaria todos os
 --   esquemas e as extensões instaladas depois, então não é feita aqui. Cada função nova revoga o próprio
 --   EXECUTE, como manda docs/modelo-de-dados.md.
 -- - Tabelas criadas depois disto, inclusive pelo Table Editor, ficam inacessíveis ao app até receberem
---   GRANT explícito. Sequências não são alteradas.
+--   GRANT explícito. Os privilégios padrão de sequências não são alterados aqui: isso fica na 006b.
 --
--- ANTES DE EXECUTAR: rode as consultas 1 e 3 e guarde o resultado. Se o projeto usava os privilégios
+-- ANTES DE EXECUTAR: rode as consultas 1 e 3 e guarde o resultado. Como o projeto usa os privilégios
 -- padrão, o estado atual pode ser mais amplo do que o escrito na 002 e na 003, e o bloco de reversão
 -- volta para o que está escrito nelas.
 --
@@ -80,7 +80,7 @@
 -- REVERSÃO (só se precisar voltar). Volta ao que está escrito na 002 e na 003. A troca da chave falha se já
 -- houver partida com criador_id nulo: nesse caso, apague essas partidas antes. A chave mantém o nome que
 -- tinha; confira com a consulta em pg_constraint se o nome abaixo não for encontrado. Os dois comandos de
--- privilégios padrão só valem se a consulta 3, feita antes de executar, mostrava essas entradas.
+-- privilégios padrão recolocam as entradas de `postgres` confirmadas neste projeto.
 --
 -- INICIO DA REVERSAO
 -- begin;

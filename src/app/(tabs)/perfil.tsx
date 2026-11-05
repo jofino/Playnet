@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/button';
@@ -46,7 +46,7 @@ type OpenSheet = 'profile' | 'rating' | 'preferences' | null;
 export default function PerfilScreen() {
   const router = useRouter();
   const isWide = useIsWideLayout();
-  const { user } = useUser();
+  const { user, profileLoading, profileError, reloadProfile } = useUser();
   const { counts, error: countsError, reload: reloadCounts } = useUserCounts(user.id);
   const [refreshing, setRefreshing] = useState(false);
   const { pickPhoto, uploading } = useProfilePhotoPicker();
@@ -66,7 +66,7 @@ export default function PerfilScreen() {
 
   async function refresh() {
     setRefreshing(true);
-    await reloadCounts();
+    await Promise.all([reloadCounts(), reloadProfile()]);
     setRefreshing(false);
   }
 
@@ -203,29 +203,38 @@ export default function PerfilScreen() {
 
         <View style={[styles.section, styles.sectionHeader, styles.sectionSpacing]}>
           <Text style={styles.sectionTitle}>Preferências de jogador</Text>
-          <Pressable
-            onPress={() => setOpenSheet('preferences')}
-            accessibilityRole="button"
-            accessibilityLabel={`Editar preferências de ${sport}`}>
-            <Text style={styles.sectionAction}>Editar</Text>
-          </Pressable>
+          {/* Sem as preferências carregadas, salvar apagaria o que está no banco. */}
+          {!profileLoading && !profileError && (
+            <Pressable
+              onPress={() => setOpenSheet('preferences')}
+              accessibilityRole="button"
+              accessibilityLabel={`Editar preferências de ${sport}`}>
+              <Text style={styles.sectionAction}>Editar</Text>
+            </Pressable>
+          )}
         </View>
         <View style={[styles.section, styles.sportLabel]}>
           <SportIcon sport={sport} size={16} />
           <Text style={styles.sectionSubtitle}>{sport}</Text>
         </View>
-        <View style={[styles.section, styles.preferences, isWide && styles.preferencesGrid]}>
-          {SPORT_PREFERENCES[sport].map((preference) => (
-            <View key={preference.key} style={isWide && styles.preferenceGridItem}>
-              <PreferenceCard
-                emoji={preference.emoji}
-                label={preference.label}
-                value={preferences[preference.key]}
-                onPress={() => setOpenSheet('preferences')}
-              />
-            </View>
-          ))}
-        </View>
+        {profileError ? (
+          <StateMessage icon={ERROR_ICON} text={profileError} onRetry={reloadProfile} />
+        ) : profileLoading ? (
+          <ActivityIndicator size="small" color={Colors.primary} style={styles.preferencesLoading} />
+        ) : (
+          <View style={[styles.section, styles.preferences, isWide && styles.preferencesGrid]}>
+            {SPORT_PREFERENCES[sport].map((preference) => (
+              <View key={preference.key} style={isWide && styles.preferenceGridItem}>
+                <PreferenceCard
+                  emoji={preference.emoji}
+                  label={preference.label}
+                  value={preference.options.find((option) => option.id === preferences[preference.key])?.label}
+                  onPress={() => setOpenSheet('preferences')}
+                />
+              </View>
+            ))}
+          </View>
+        )}
 
         <View style={[styles.section, styles.sectionSpacing]}>
           <SignOutButton />
@@ -272,6 +281,9 @@ const styles = StyleSheet.create({
   },
   sectionSpacing: {
     marginTop: Spacing.five,
+  },
+  preferencesLoading: {
+    marginTop: Spacing.three,
   },
   pressed: {
     opacity: 0.7,

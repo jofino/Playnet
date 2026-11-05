@@ -2,28 +2,43 @@ import type { Sport } from '@/constants/sports';
 
 export type PreferenceKey = 'dominant' | 'side' | 'schedule';
 
+/** `id` é o valor guardado no banco; os checks de `jogador_preferencias` aceitam só estes ids. */
+export type PreferenceOption = { id: string; label: string };
+
 export type PreferenceDefinition = {
   key: PreferenceKey;
   emoji: string;
   label: string;
-  options: string[];
+  options: PreferenceOption[];
 };
 
 const HAND: PreferenceDefinition = {
   key: 'dominant',
   emoji: '✋',
   label: 'Mão dominante',
-  options: ['Destra', 'Canhota', 'Ambidestra'],
+  options: [
+    { id: 'destra', label: 'Destra' },
+    { id: 'canhota', label: 'Canhota' },
+    { id: 'ambidestra', label: 'Ambidestra' },
+  ],
 };
 
 const FOOT: PreferenceDefinition = {
   key: 'dominant',
   emoji: '🦶',
   label: 'Pé dominante',
-  options: ['Direito', 'Esquerdo', 'Ambos'],
+  options: [
+    { id: 'direito', label: 'Direito' },
+    { id: 'esquerdo', label: 'Esquerdo' },
+    { id: 'ambos', label: 'Ambos' },
+  ],
 };
 
-const SIDE_OPTIONS = ['Direita', 'Esquerda', 'Tanto faz'];
+const SIDE_OPTIONS: PreferenceOption[] = [
+  { id: 'direita', label: 'Direita' },
+  { id: 'esquerda', label: 'Esquerda' },
+  { id: 'tanto-faz', label: 'Tanto faz' },
+];
 
 const COURT_SIDE: PreferenceDefinition = {
   key: 'side',
@@ -43,7 +58,12 @@ const SCHEDULE: PreferenceDefinition = {
   key: 'schedule',
   emoji: '🌅',
   label: 'Horário de jogo preferido',
-  options: ['Manhã', 'Tarde', 'Noite', 'Qualquer horário'],
+  options: [
+    { id: 'manha', label: 'Manhã' },
+    { id: 'tarde', label: 'Tarde' },
+    { id: 'noite', label: 'Noite' },
+    { id: 'qualquer', label: 'Qualquer horário' },
+  ],
 };
 
 /** Preferências de jogador de cada esporte: membro dominante, lado e horário. */

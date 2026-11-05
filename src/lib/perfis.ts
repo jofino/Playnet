@@ -1,3 +1,7 @@
+import type { PreferenceKey } from '@/constants/sport-preferences';
+import { SPORT_IDS, sportFromId, type Sport } from '@/constants/sports';
+import type { City } from '@/data/cities';
+import type { User } from '@/data/user';
 import { supabase } from '@/lib/supabase';
 
 /** Nome usado quando um usuário ainda não tem perfil. */
@@ -145,6 +149,59 @@ export async function unfollowUser(followerId: string, userId: string) {
     .delete()
     .eq('seguidor_id', followerId)
     .eq('seguido_id', userId);
+  if (error) throw error;
+}
+
+/** Cidade e preferências do usuário logado, guardadas no banco. */
+export async function fetchOwnProfileData(userId: string): Promise<Pick<User, 'city' | 'preferences'>> {
+  const [profile, savedPreferences] = await Promise.all([
+    supabase.from('perfis').select('cidades(id, nome, uf)').eq('id', userId).maybeSingle(),
+    supabase
+      .from('jogador_preferencias')
+      .select('esporte_id, dominante, lado, horario')
+      .eq('user_id', userId),
+  ]);
+  if (profile.error) throw profile.error;
+  if (savedPreferences.error) throw savedPreferences.error;
+
+  const preferences: User['preferences'] = {};
+  for (const row of savedPreferences.data) {
+    const sport = sportFromId(row.esporte_id);
+    if (!sport) continue;
+    preferences[sport] = {
+      dominant: row.dominante ?? undefined,
+      side: row.lado ?? undefined,
+      schedule: row.horario ?? undefined,
+    };
+  }
+
+  const city = profile.data?.cidades as unknown as { id: number; nome: string; uf: string } | null | undefined;
+  return { city: city ? { id: city.id, name: city.nome, state: city.uf } : null, preferences };
+}
+
+export async function updateProfileCity(userId: string, city: City | null) {
+  const { error } = await supabase
+    .from('perfis')
+    .update({ cidade_id: city?.id ?? null })
+    .eq('id', userId);
+  if (error) throw error;
+}
+
+export async function saveSportPreferences(
+  userId: string,
+  sport: Sport,
+  preferences: Partial<Record<PreferenceKey, string>>
+) {
+  const { error } = await supabase.from('jogador_preferencias').upsert(
+    {
+      user_id: userId,
+      esporte_id: SPORT_IDS[sport],
+      dominante: preferences.dominant ?? null,
+      lado: preferences.side ?? null,
+      horario: preferences.schedule ?? null,
+    },
+    { onConflict: 'user_id,esporte_id' }
+  );
   if (error) throw error;
 }
 

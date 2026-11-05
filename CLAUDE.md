@@ -24,3 +24,4 @@
 - Nunca commitar arquivos .env*, exceto o .env.example, que fica sem valores. Variáveis ficam em .env.local (EXPO_PUBLIC_SUPABASE_URL e EXPO_PUBLIC_SUPABASE_KEY).
 - Nunca usar a chave secret/service_role no app nem em arquivos do repositório.
 - Toda tabela nova deve ter RLS ativado e policies explícitas, nunca políticas abertas sem comentário explicando que são temporárias.
+- Toda tabela e sequência nova deve revogar explicitamente os privilégios de anon e authenticated, e toda função nova deve revogar de public, anon e authenticated. Depois, conceder só o necessário, sem confiar nos privilégios padrão do Supabase.

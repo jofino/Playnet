@@ -330,10 +330,11 @@ erDiagram
 
 Para não repetir em cada tabela:
 
-- **RLS e acesso:** RLS ativado, policies explícitas, nada concedido a `anon`, e `GRANT` só do necessário para `authenticated`, como nas migrations atuais.
+- **RLS e acesso:** RLS ativado, policies explícitas, `revoke all` de `anon` e `authenticated` em toda tabela e view nova e, depois, `GRANT` só do necessário para `authenticated`, como na 004 e na 006. Nunca confiar nos privilégios padrão do Supabase, que dão acesso total a esses dois roles (veja "Privilégios padrão do projeto", na etapa 1).
 - **Usuário nunca vem do cliente:** a identidade sempre sai de `auth.uid()`. Nenhuma função que o app alcança recebe o id do usuário como parâmetro.
 - **"Só por função" significa:** o cliente não tem `INSERT`, `UPDATE` nem `DELETE` na tabela. Ele chama uma função SQL (RPC), que valida tudo e grava em uma única transação.
-- **Funções:** `security definer`, com `search_path` vazio. O `EXECUTE` é retirado de `public` e `anon` e dado só a `authenticated`. Funções internas, como a que credita moedas, ficam em um esquema `privado`, fora do alcance da API.
+- **Funções:** `security definer`, com `search_path` vazio. O `EXECUTE` é retirado de `public`, `anon` e `authenticated`, e devolvido só a `authenticated` nas funções que o app chama. Revogar sem incluir `public` não basta, porque toda função nasce executável por ele. Funções internas, como a que credita moedas, não recebem esse `GRANT` e ficam em um esquema `privado`, fora do alcance da API.
+- **Sequências:** toda sequência nova, inclusive a de um `id` sequencial, recebe `revoke all` de `anon` e `authenticated`. Em tabelas "só por função", ninguém recebe `USAGE`. Se o cliente gravar direto na tabela, uma coluna `serial` exige `grant usage` na sequência, e uma coluna `generated ... as identity` não exige.
 - **Funções internas chamadas por você ou pelo `pg_cron`:** rodam sem usuário logado, então `auth.uid()` é nulo. Quando precisam registrar quem agiu, como em `privado.corrigir_resultado`, recebem esse id por parâmetro. Essa é a única exceção à regra acima, e o cliente não alcança esse esquema.
 - **RLS não protege colunas:** a policy decide quais linhas alguém altera, não quais colunas. Colunas protegidas exigem `GRANT UPDATE` por coluna.
 - **Tabelas novas apontam para `perfis`, não para `auth.users`:** o app não enxerga `auth.users`, então hoje precisa de duas consultas para mostrar nomes ([fetchProfileNames](../src/lib/perfis.ts)). Com a chave em `perfis`, uma consulta só traz os dois. A Comunidade é exceção, a seu pedido: aponta para `auth.users`, e o feed traz os nomes pela view `publicacoes_feed`.
@@ -345,7 +346,7 @@ Encontrei seis pontos nas migrations atuais que atrapalham o que vem depois. A 0
 | Ponto | Problema | Proposta |
 |---|---|---|
 | `grant update on perfis` vale para a tabela inteira | Qualquer coluna nova, como o título em uso, nasce editável pelo próprio usuário | Na 005, trocar por `GRANT UPDATE` só em `nome_exibicao`, **antes** de adicionar colunas. `cidade_id` e `foto_url` recebem o grant na migration que as cria, porque não dá para conceder privilégio em coluna que ainda não existe |
-| Os `grant` da 002 e da 003 não restringem nada se o projeto usa os privilégios padrão do Supabase | `authenticated` pode ficar com mais permissões do que as listadas, como `UPDATE` e `TRUNCATE`. O RLS continua bloqueando as linhas, e a API não oferece `TRUNCATE` | Revogar tudo de `authenticated` nessas tabelas e conceder só o necessário, como a 004 já faz |
+| Os `grant` da 002 e da 003 não restringem nada, porque o projeto usa os privilégios padrão do Supabase, como o `pg_default_acl` confirmou | `authenticated` pode ficar com mais permissões do que as listadas, como `UPDATE` e `TRUNCATE`. O RLS continua bloqueando as linhas, e a API não oferece `TRUNCATE` | Revogar tudo de `authenticated` nessas tabelas e conceder só o necessário, como a 004 já faz |
 | Entrar e sair de partida é `INSERT`/`DELETE` direto | Dá para entrar em partida lotada ou já jogada, e sair depois do resultado. A corrida da última vaga já está comentada na 002 | Na etapa 2, funções `entrar_na_partida` e `sair_da_partida`, com trava na linha da partida, e retirar a escrita direta. Até lá a 005 mantém esses privilégios, porque o app os usa |
 | Criar partida são dois `INSERT` fora de transação | O criador pode ficar de fora se o segundo falhar, limitação já comentada na 002 | Na etapa 2, função `criar_partida` |
 | O criador pode alterar a partida | Depois de um resultado, poderia trocar esporte ou data. O app não tem tela de edição, e a busca em `src/` não encontrou `UPDATE` em `partidas` | Na 005, retirar o `UPDATE` e a policy dele até existir essa tela |
@@ -393,7 +394,8 @@ Encontrei seis pontos nas migrations atuais que atrapalham o que vem depois. A 0
 - **Finalidade:** mão ou pé dominante, lado e horário por esporte, mostrados no Perfil e hoje perdidos ao fechar o app.
 - **Colunas:** `user_id` e `esporte_id` (chave), `dominante`, `lado`, `horario`.
 - **Ler:** qualquer usuário logado.
-- **Escrever:** só o próprio usuário.
+- **Escrever:** só o próprio usuário, com `INSERT` e `UPDATE`. Sem `DELETE`, porque o app só salva preferências e nunca as apaga.
+- **Privilégios:** `revoke all` de `anon` e `authenticated`, e `GRANT SELECT, INSERT, UPDATE` a `authenticated`. A chave é composta, então não há sequência.
 
 ### 2.5 Ranking
 
@@ -424,7 +426,7 @@ Encontrei seis pontos nas migrations atuais que atrapalham o que vem depois. A 0
 
 #### `rating_historico`
 - **Finalidade:** cada mudança de rating, para o gráfico de evolução do Perfil e para auditoria. As linhas nunca são editadas.
-- **Colunas:** `id` (sequencial), `user_id`, `esporte_id`, `origem` (`nivelamento`, `resultado`, `correcao`, `reaplicacao`), `resultado_id`, `rating_antes`, `rating_depois`, `criado_em`.
+- **Colunas:** `id` (sequencial, com a sequência sob a regra da seção 2.1), `user_id`, `esporte_id`, `origem` (`nivelamento`, `resultado`, `correcao`, `reaplicacao`), `resultado_id`, `rating_antes`, `rating_depois`, `criado_em`.
 - **Unicidade:** `resultado_id` + `user_id` + `origem`, para que nenhuma repetição aplique o mesmo efeito duas vezes. Como o nivelamento não tem `resultado_id` e nulos não colidem nessa regra, há outro índice único parcial: uma linha de `nivelamento` por usuário e esporte.
 - **Ler:** qualquer usuário logado, porque o gráfico pode aparecer no perfil de outro jogador.
 - **Escrever:** só por função.
@@ -452,7 +454,7 @@ Encontrei seis pontos nas migrations atuais que atrapalham o que vem depois. A 0
 
 #### `moedas_transacoes`
 - **Finalidade:** o registro oficial de toda entrada e saída de moedas. As linhas nunca são editadas nem apagadas. Um erro se corrige com uma nova linha.
-- **Colunas:** `id` (sequencial), `user_id`, `valor` (nunca zero), `tipo` (`compra`, `recompensa`, `ajuste`, `estorno`), `resultado_id` (nas recompensas e nos descontos ligados a um resultado), `chave_idempotencia` (única), `descricao`, `criado_em`.
+- **Colunas:** `id` (sequencial, com a sequência sob a regra da seção 2.1), `user_id`, `valor` (nunca zero), `tipo` (`compra`, `recompensa`, `ajuste`, `estorno`), `resultado_id` (nas recompensas e nos descontos ligados a um resultado), `chave_idempotencia` (única), `descricao`, `criado_em`.
 - **Coerência de sinal, por check:** `compra` é negativa; `recompensa` e `estorno` são positivos; `ajuste` pode ter qualquer sinal.
 - **Índice:** `user_id` + `tipo` + `criado_em`, para o limite diário de recompensas.
 - **Ler:** só o dono.
@@ -586,7 +588,7 @@ O código já usa torneios: [tournaments.ts](../src/data/tournaments.ts), [brack
 
 ### 3.3 Cidade
 
-**Decisão:** tabela `cidades` preenchida com os cerca de 5.570 municípios do IBGE, usando o código IBGE como chave. O campo `local` continua como texto livre.
+**Decisão:** tabela `cidades` preenchida com os 5.571 municípios que a API do IBGE devolveu em 04/11/2026, usando o código IBGE como chave. O campo `local` continua como texto livre.
 
 **Motivo:** o Ranking filtra por estado e cidade. Com texto livre, "São Paulo", "sao paulo" e "SP" viram três cidades. O código IBGE é público e estável, e a lista não depende de serviço externo durante o uso. Quando o Google Maps entrar, uma futura tabela de locais pode apontar para `cidades` sem conflito.
 
@@ -796,7 +798,7 @@ Em duas fases. Só a fase (a) tem colunas. A fase (b) está apenas descrita, par
 ```mermaid
 flowchart TD
   E0["Etapa 0: testar 002, 003 e 004 no banco real"] --> E1A["Etapa 1a: 005, privilégios e segurança"]
-  E1A --> E1B["Etapa 1b: 006 e 007, esportes e cidades"]
+  E1A --> E1B["Etapa 1b: 006, 006b e 007, esportes, cidades e privilégios padrão"]
   E1B --> E1C["Etapa 1c: 008, conversão de partidas e perfis"]
   E1C --> E1D["Etapa 1d: Storage de fotos"]
   E1C --> E2["Etapa 2: partidas seguras"]
@@ -822,14 +824,15 @@ flowchart TD
 
 ### Etapa 1 em detalhe
 
-Novas migrations, sem editar a 002, a 003 nem a 004, que já foram executadas.
+Novas migrations, sem editar a 002, a 003, a 004 nem a 005, que já foram executadas.
 
 | Migration | Conteúdo | Arquivos do app que mudam junto |
 |---|---|---|
 | `005` privilégios e segurança | Revisão de grants da 002 e da 003, conforme a tabela abaixo; `UPDATE` em `perfis` só em `nome_exibicao`; retirada do `UPDATE` de `partidas`; `partidas.criador_id` com `drop not null` e `on delete set null` | Nenhum |
 | `006` esportes e cidades | Tabelas `esportes` e `cidades`, com os 6 esportes | Nenhum |
-| `007` carga do IBGE | Só os municípios, em arquivo separado | Nenhum |
-| `008` conversão e perfis | Troca `esporte`, `cidade` e `nivel` de `partidas`; `cidade_id` e `foto_url` em `perfis`, com o `GRANT UPDATE` delas; `jogador_preferencias` | `src/lib/partidas.ts`, `src/data/matches.ts`, `src/constants/sports.ts`, `src/components/matches/schedule-match-sheet.tsx`, `src/components/matches/match-card.tsx`, `src/app/partida/[id].tsx`, `src/state/user-context.tsx`, `src/components/profile/edit-profile-sheet.tsx`, `src/hooks/use-sport-profile.ts` e um seletor de cidade novo |
+| `006b` privilégios padrão | Retira `anon` e `authenticated` dos privilégios padrão de `postgres` em `public`, para tabelas, funções e sequências. O nome `006b` mantém a numeração da 007 e da 008 | Nenhum |
+| `007` carga do IBGE | Os 5.571 municípios, em quatro arquivos: `007_cidades_carga_parte1.sql`, `007_cidades_carga_parte2.sql`, `007_cidades_carga_parte3.sql` e `007_cidades_verificacao.sql`, gerados por `scripts/gerar-cidades.mjs` | Nenhum |
+| `008` conversão e perfis | Troca `esporte`, `cidade` e `nivel` de `partidas`; `cidade_id` e `foto_url` em `perfis`, com o `GRANT UPDATE` delas; `jogador_preferencias`, com `revoke all` de `anon` e `authenticated` e `GRANT SELECT, INSERT, UPDATE` a `authenticated` | `src/lib/partidas.ts`, `src/data/matches.ts`, `src/constants/sports.ts`, `src/components/matches/schedule-match-sheet.tsx`, `src/components/matches/match-card.tsx`, `src/app/partida/[id].tsx`, `src/state/user-context.tsx`, `src/components/profile/edit-profile-sheet.tsx`, `src/hooks/use-sport-profile.ts` e um seletor de cidade novo |
 | Próxima livre: Storage | Bucket e policies de foto. Fica à parte porque pode ser adiado | `src/services/profile-photo.ts`, `src/hooks/use-profile-photo-picker.ts`, `src/app/(tabs)/perfil.tsx` |
 
 #### O que a 005 precisa manter
@@ -854,11 +857,30 @@ Busca em todo o `src/` por `.update(`, `.delete(`, `.insert(`, `.upsert(` e `.rp
 5. Publicar e curtir, para confirmar que a 004 não foi afetada.
 6. No painel, conferir os privilégios das quatro tabelas contra a tabela acima.
 
+#### Privilégios padrão do projeto (006b)
+
+**Resultado registrado em 04/11/2026.** A consulta em `pg_default_acl`, feita **depois** de executar a 005, mostra que `anon` e `authenticated` continuam com acesso total por padrão em tabelas, `EXECUTE` em funções e `rwU` em sequências, com donos `postgres` e `supabase_admin`.
+
+**Ainda não explicado:** a 005 deveria ter retirado as entradas de tabelas e funções de `postgres`. O resultado acima não separa as entradas por dono, então há dois casos possíveis:
+- **Tabelas e funções só em `supabase_admin`, e `postgres` só com sequências:** é o que a 005 deveria deixar.
+- **`postgres` ainda com tabelas ou funções:** o item 5 da 005 não teve efeito, e a causa precisa ser investigada, porque a 006b usa o mesmo tipo de comando.
+
+A consulta de verificação da 006b separa por dono, tipo e beneficiado, e mostra qual é o caso. A 005 não é editada, porque já foi executada: o ajuste vai na 006b.
+
+**O que fica de fora da 006b:**
+- Os padrões de `supabase_admin`, que o `postgres` não deve conseguir alterar. Tudo o que `supabase_admin` criar em `public` continua nascendo aberto.
+- O `EXECUTE` de `public` em funções novas, porque esse padrão é global.
+
+Por isso, a regra da seção 2.1 vale mesmo depois da 006b: cada objeto novo faz o próprio `revoke`.
+
 #### Carga do IBGE (007)
 
-- **Fonte:** a API de localidades do IBGE, a fonte oficial. Nunca uma lista escrita de memória.
-- **Formato:** `INSERT` em lotes de cerca de 500 linhas.
-- **Verificação depois de executar:** total próximo de 5.570 municípios e presença dos códigos 3550308 (São Paulo), 3509502 (Campinas) e 3304557 (Rio de Janeiro).
+- **Fonte:** a API de localidades do IBGE, a fonte oficial, baixada em 04/11/2026. Nunca uma lista escrita de memória.
+- **Total:** 5.571 municípios nas 27 UFs. Os 6 municípios de controle bateram com a API.
+- **Arquivos:** `007_cidades_carga_parte1.sql`, `007_cidades_carga_parte2.sql` e `007_cidades_carga_parte3.sql`, com 1.857 municípios cada, e `007_cidades_verificacao.sql`, só de leitura. Executar nessa ordem, depois da 006.
+- **Geração:** `scripts/gerar-cidades.mjs`, que valida os dados e não grava nenhum SQL se algo falhar. A resposta bruta da API fica fora do repositório.
+- **Formato:** `INSERT` em lotes de cerca de 500 linhas, entre `begin` e `commit`, e pode ser executado de novo sem duplicar.
+- **Verificação depois de executar:** `007_cidades_verificacao.sql`, com 46 linhas esperadas: total de 5.571, 27 UFs, contagem por UF, nenhum `nome_busca` divergente, os 6 municípios de controle (3550308 São Paulo, 3509502 Campinas, 3304557 Rio de Janeiro, 5300108 Brasília, 3548906 São Carlos e 3543402 Ribeirão Preto), o teste de prefixo e o índice. O `EXPLAIN` fica em comentário, para rodar à parte.
 
 #### Conversão de partidas (008)
 

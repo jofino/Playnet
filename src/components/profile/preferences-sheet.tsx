@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import { Button } from '@/components/button';
 import { Chip } from '@/components/chip';
@@ -7,6 +7,7 @@ import { Sheet } from '@/components/sheet';
 import { SPORT_PREFERENCES, type PreferenceKey } from '@/constants/sport-preferences';
 import type { Sport } from '@/constants/sports';
 import { Colors, Spacing } from '@/constants/theme';
+import { getDataErrorMessage } from '@/lib/data-errors';
 
 type Preferences = Partial<Record<PreferenceKey, string>>;
 
@@ -14,21 +15,33 @@ type PreferencesSheetProps = {
   sport: Sport;
   initial: Preferences;
   onClose: () => void;
-  onSave: (preferences: Preferences) => void;
+  /** Grava as preferências; se falhar, o painel continua aberto e mostra o erro. */
+  onSave: (preferences: Preferences) => Promise<void>;
 };
 
 /** Edição das preferências de jogador em um esporte. */
 export function PreferencesSheet({ sport, initial, onClose, onSave }: PreferencesSheetProps) {
   const [draft, setDraft] = useState<Preferences>(initial);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Tocar de novo na opção escolhida volta para "Não definido".
   function toggle(key: PreferenceKey, option: string) {
     setDraft((current) => ({ ...current, [key]: current[key] === option ? undefined : option }));
   }
 
-  function save() {
-    onSave(draft);
-    onClose();
+  async function save() {
+    if (saving) return;
+
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave(draft);
+      onClose();
+    } catch (failure) {
+      setError(getDataErrorMessage(failure));
+      setSaving(false);
+    }
   }
 
   return (
@@ -38,8 +51,14 @@ export function PreferencesSheet({ sport, initial, onClose, onSave }: Preference
       onClose={onClose}
       footer={
         <>
-          <Button label="Cancelar" variant="outline" onPress={onClose} style={styles.footerButton} />
-          <Button label="Salvar" onPress={save} style={styles.footerButton} />
+          <Button label="Cancelar" variant="outline" onPress={onClose} disabled={saving} style={styles.footerButton} />
+          <Button
+            label="Salvar"
+            onPress={save}
+            disabled={saving}
+            icon={saving ? <ActivityIndicator size="small" color={Colors.onPrimary} /> : undefined}
+            style={styles.footerButton}
+          />
         </>
       }>
       <View style={styles.content}>
@@ -51,15 +70,20 @@ export function PreferencesSheet({ sport, initial, onClose, onSave }: Preference
             <View style={styles.options}>
               {preference.options.map((option) => (
                 <Chip
-                  key={option}
-                  label={option}
-                  selected={draft[preference.key] === option}
-                  onPress={() => toggle(preference.key, option)}
+                  key={option.id}
+                  label={option.label}
+                  selected={draft[preference.key] === option.id}
+                  onPress={() => toggle(preference.key, option.id)}
                 />
               ))}
             </View>
           </View>
         ))}
+        {!!error && (
+          <Text style={styles.error} accessibilityRole="alert" accessibilityLiveRegion="polite">
+            {error}
+          </Text>
+        )}
       </View>
     </Sheet>
   );
@@ -82,6 +106,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: Spacing.two,
+  },
+  error: {
+    color: '#D92D20',
+    fontSize: 13,
   },
   footerButton: {
     flex: 1,

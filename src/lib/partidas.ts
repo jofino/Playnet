@@ -1,27 +1,34 @@
-import type { Sport } from '@/constants/sports';
-import { openSpots, type Match } from '@/data/matches';
+import { sportFromId, type SportId } from '@/constants/sports';
+import { formatCity } from '@/data/cities';
+import { openSpots, type Match, type MatchLevel } from '@/data/matches';
 import { getDataErrorMessage } from '@/lib/data-errors';
 import { fetchProfileNames, UNKNOWN_PLAYER_NAME } from '@/lib/perfis';
 import { supabase } from '@/lib/supabase';
 
-const MATCH_COLUMNS = 'id, criador_id, esporte, local, cidade, nivel, data_hora, vagas';
+const MATCH_COLUMNS =
+  'id, criador_id, esporte_id, cidade_id, local, nivel, data_hora, vagas, cidades(nome, uf), esportes(nome)';
 
 type MatchRow = {
   id: string;
-  criador_id: string;
-  esporte: string;
+  criador_id: string | null;
+  esporte_id: string;
+  cidade_id: number;
   local: string;
-  cidade: string;
-  nivel: string;
+  nivel: MatchLevel;
   data_hora: string;
   vagas: number;
+  cidades: { nome: string; uf: string };
+  esportes: { nome: string };
 };
 
+// Sem os tipos gerados do banco, o cliente supõe que toda relação é uma lista; por chave estrangeira, vem um objeto.
+const asMatchRows = (rows: unknown) => rows as MatchRow[];
+
 export type NewMatch = {
-  sport: Sport;
+  sportId: SportId;
   place: string;
-  city: string;
-  level: string;
+  cityId: number;
+  level: MatchLevel;
   /** Data e hora em ISO 8601. */
   date: string;
   /** Total de jogadores, incluindo quem criou. */
@@ -53,22 +60,30 @@ async function withParticipants(rows: MatchRow[]): Promise<Match[]> {
 
   const names = await fetchProfileNames([...new Set(data.map((link) => link.user_id as string))]);
 
-  return rows.map((row) => ({
-    id: row.id,
-    creatorId: row.criador_id,
-    sport: row.esporte as Sport,
-    place: row.local,
-    city: row.cidade,
-    level: row.nivel,
-    date: row.data_hora,
-    spots: row.vagas,
-    participants: data
-      .filter((link) => link.partida_id === row.id)
-      .map((link) => ({
-        id: link.user_id,
-        name: names.get(link.user_id) ?? UNKNOWN_PLAYER_NAME,
-      })),
-  }));
+  return rows.flatMap((row) => {
+    // Um esporte novo só existe para versões do app que já o conhecem: ícones e formatos dependem dele.
+    const sport = sportFromId(row.esporte_id);
+    if (!sport) return [];
+
+    return {
+      id: row.id,
+      creatorId: row.criador_id,
+      sport,
+      sportName: row.esportes.nome,
+      place: row.local,
+      cityId: row.cidade_id,
+      city: formatCity({ name: row.cidades.nome, state: row.cidades.uf }),
+      level: row.nivel,
+      date: row.data_hora,
+      spots: row.vagas,
+      participants: data
+        .filter((link) => link.partida_id === row.id)
+        .map((link) => ({
+          id: link.user_id,
+          name: names.get(link.user_id) ?? UNKNOWN_PLAYER_NAME,
+        })),
+    };
+  });
 }
 
 /** Próximas partidas, da mais próxima para a mais distante. */
@@ -79,7 +94,7 @@ export async function fetchUpcomingMatches() {
     .gte('data_hora', new Date().toISOString())
     .order('data_hora');
   if (error) throw error;
-  return withParticipants(data);
+  return withParticipants(asMatchRows(data));
 }
 
 export async function fetchMatch(id: string) {
@@ -90,7 +105,7 @@ export async function fetchMatch(id: string) {
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  const [match] = await withParticipants([data]);
+  const [match] = await withParticipants(asMatchRows([data]));
   return match;
 }
 
@@ -112,7 +127,7 @@ export async function fetchUserMatches(userId: string) {
     )
     .order('data_hora', { ascending: false });
   if (error) throw error;
-  return withParticipants(data);
+  return withParticipants(asMatchRows(data));
 }
 
 /** Cria a partida com o usuário logado como criador e primeiro participante. */
@@ -120,9 +135,9 @@ export async function createMatch(match: NewMatch) {
   const { data, error } = await supabase
     .from('partidas')
     .insert({
-      esporte: match.sport,
+      esporte_id: match.sportId,
       local: match.place,
-      cidade: match.city,
+      cidade_id: match.cityId,
       nivel: match.level,
       data_hora: match.date,
       vagas: match.spots,
